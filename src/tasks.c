@@ -35,12 +35,10 @@ int distance_per_tick_l;
 #define DATA_RATE_HZ 100
 #define MAX_SCL 400000
 #define I2C_ADDR 0x055 // Default Slave Address
-#define ENCODER_R_INT_PIN 16 // GP16 (GPIO PIN #21)
-#define ENCODER_L_INT_PIN 17 // GP17 (GPIO PIN # 22)
-#define MOTOR_R_PIN 18 // GP18 (GPIO PIN #24) 
-#define MOTOR_L_PIN  20 // GP20 (GPIO PIN #26) 
-// #define MOTOR_BR_PIN 19 // GP19 (GPIO PIN #25) 
-// #define MOTOR_BL_PIN 21 // GP21 (GPIO PIN #27) 
+#define ENCODER_R_INT_PIN 15 // GP15
+#define ENCODER_L_INT_PIN 16 // GP16
+#define MOTOR_R_PIN 14 // GP14 
+#define MOTOR_L_PIN  17 // GP17 
 #define I2C_SDA_PIN 26 // GP26 (GPIO PIN #31)
 #define I2C_SCL_PIN 27 // GP27 (GPIO PIN # 32)
 #define UART_ID uart0
