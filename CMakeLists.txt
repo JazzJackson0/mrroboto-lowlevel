@@ -1,10 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 
 # Specify compilers and language standards
-# set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS-Kernel)
+set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS-Kernel)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# set(CMAKE_C_COMPILER /usr/lib/ccache/arm-none-eabi-gcc)
-# set(CMAKE_CXX_COMPILER /usr/lib/ccache/arm-none-eabi-g++)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
 set(CMAKE_C_STANDARD 11)
@@ -31,7 +29,8 @@ add_executable(little_roboto
     src/mrroboto_lowlevel.c 
     src/tasks.c 
     src/pwm.c 
-    src/bno055.c)
+    src/bno055.c
+)
 
 target_include_directories(little_roboto PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
@@ -47,6 +46,8 @@ target_link_libraries(little_roboto PRIVATE
     pico_cyw43_arch_none    # WiFi chip
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4
+    # -nostartfiles           # Optional: to avoid the startup code from libc
+    # -specs=nosys.specs      # Prevent standard library from expecting system-level routines
 )
 
 
