@@ -108,6 +108,26 @@ vector3f read_lin_accel() {
     return linear_acceleration;
 }
 
+vector3f read_rot_vel() {
+    vector3f rotational_vel; // radians
+    uint8_t rot_vel[6];
+    uint8_t rot_vel_reg = BNO055_GYR_DATA_X_LSB_REG;
+    i2c_write_blocking(i2c_default, BNO055_ADDRESS_A, &rot_vel_reg, 1, true);
+    i2c_read_blocking(i2c_default, BNO055_ADDRESS_A, rot_vel, 6, false);
+
+    int16_t x, y, z;
+    x = y = z = 0;
+    x = ((int16_t)rot_vel[0]) | (((int16_t)rot_vel[1]) << 8);
+    y = ((int16_t)rot_vel[2]) | (((int16_t)rot_vel[3]) << 8);
+    z = ((int16_t)rot_vel[4]) | (((int16_t)rot_vel[5]) << 8);
+
+    rotational_vel.x = ((float)x) / 100.0;
+    rotational_vel.y = ((float)y) / 100.0;
+    rotational_vel.z = ((float)z) / 100.0;
+
+    return rotational_vel;
+}
+
 quaternion read_abs_quaternion() {
     quaternion abs_quaternion;
     uint8_t quat[8];

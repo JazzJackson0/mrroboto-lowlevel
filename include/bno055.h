@@ -26,6 +26,7 @@
 #define BNO055_QUATERNION_DATA_W_LSB_REG 0X20
 #define BNO055_EULER_H_LSB_REG 0X1A
 #define BNO055_ACCEL_DATA_X_LSB_REG 0X08
+#define BNO055_GYR_DATA_X_LSB_REG 0X14
 
 
 struct _quaternion {
@@ -67,18 +68,29 @@ void imu_init();
 CALIB_STATUS read_calib_status();
 
 /**
- * @brief 
+ * @brief Includes the effects of gravity as well as any motion-induced accelerations.
+ *      If the sensor is at rest on a horizontal surface, it will measure an acceleration of approximately 9.8 m/s^2 due to gravity
+ *      Includes both the robot's acceleration and the effect of gravity.
  * 
  * @return vector3f 
  */
 vector3f read_accel();
 
 /**
- * @brief 
+ * @brief Acceleration with the gravity component removed. Represents only the acceleration due to the motion of the sensor.
+ *      If the sensor is at rest on a flat surface, the linear acceleration will be 0 m/s^2
+ *      Represents only the robot's movement, making it easier to analyze its dynamics or use it for motion control.
  * 
  * @return vector3f 
  */
 vector3f read_lin_accel();
+
+/**
+ * @brief Rotational velocity (Radians)
+ * 
+ * @return vector3f 
+ */
+vector3f read_rot_vel(); 
 
 /**
  * @brief 

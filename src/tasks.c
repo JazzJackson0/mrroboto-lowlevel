@@ -7,17 +7,24 @@ void encoder_update_l();
 float get_distance_r();
 float get_distance_l();
 void actuator_out(float left_duty_cycle, float right_duty_cycle);
+void get_imu_position();
+void get_imu_trans_vel();
+void get_imu_rot_vel();
+void update_trans_vel();
 
-void vEncoderUpdateTask(void *pvParameters);
-void vSendDistanceDataTask(void *pvParameters);
+// void vEncoderUpdateTask(void *pvParameters);
+// void vSendEncoderDistanceDataTask(void *pvParameters);
+void vSendIMUDistanceDataTask(void *pvParameters); 
 void vReceivePWMDataTask(void *pvParameters);
 void vPWMOutTask(void *pvParameters);
-void vUpdateIMUDataTask(void *pvParameters);
+// void vUpdateIMUDataTask(void *pvParameters);
+void vUpdateLinearAccelTask(void *pvParameters);
 
-void encoder_update_isr(uint pin_no, uint32_t event_flags);
-void distance_request_isr();
+// void encoder_update_isr(uint pin_no, uint32_t event_flags);
+// void distance_request_isr();
 void pwm_receive_isr();
-void timer_callback(TimerHandle_t xTimer);
+// void timer_callback(TimerHandle_t xTimer);
+void linear_accel_timer_callback(TimerHandle_t xLinearAccelTimer);
 
 int global_total_tick_count_r;
 int total_tick_count_r;
@@ -44,46 +51,91 @@ int distance_per_tick_l;
 #define UART_ID uart0
 
 #define DIST_BUFFER_SIZE 8
+#define VEL_BUFFER_SIZE 16
 #define PWM_BUFFER_SIZE 8
 
 volatile float left_duty = 0;
 volatile float right_duty = 0;
+
+volatile float integral_x = 0.f;
+volatile float double_integral_x = 0.f;
+volatile float integral_y = 0.f;
+volatile float double_integral_y = 0.f;
+volatile float *prev_pos;
+volatile float *current_pos;
+volatile float *t_vels;
+volatile float *r_vels;
 
 uint r_slice_num;
 uint l_slice_num;
 uint pin_triggered;
 
 TaskHandle_t xTaskHandle = NULL;
-TaskHandle_t dist_read_task_handle = NULL;
+TaskHandle_t encoder_dist_read_task_handle = NULL;
+TaskHandle_t imu_dist_read_task_handle = NULL;
 TaskHandle_t pwm_read_task_handle = NULL;
 TaskHandle_t imu_timer_task_handle = NULL;
 TaskHandle_t pwm_out_handle = NULL;
+TaskHandle_t linear_accel_timer_task_handle = NULL;
 
-void vEncoderUpdateTask(void *pvParameters) {
+// void vEncoderUpdateTask(void *pvParameters) {
 
-    for (;;) {
-        // uint32_t ulNotificationValue;
-        // ulNotificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (pin_triggered == ENCODER_R_INT_PIN) {
-            encoder_update_r();
-        }
-        else {
-            encoder_update_l();
-        }
-    }
-}
+//     for (;;) {
+//         // uint32_t ulNotificationValue;
+//         // ulNotificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//         if (pin_triggered == ENCODER_R_INT_PIN) {
+//             encoder_update_r();
+//         }
+//         else {
+//             encoder_update_l();
+//         }
+//     }
+// }
 
-void vSendDistanceDataTask(void *pvParameters) {
+// void vSendEncoderDistanceDataTask(void *pvParameters) {
+
+//     for (;;) {
+//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+//         // Master wants distance data
+//         if (i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS) {
+//             uint8_t dist_per_wheel_buffer[DIST_BUFFER_SIZE];
+//             dist_per_wheel_buffer[0] = (uint32_t) get_distance_l();
+//             dist_per_wheel_buffer[4] = (uint32_t) get_distance_r();
+//             i2c_write_raw_blocking(i2c1, dist_per_wheel_buffer, DIST_BUFFER_SIZE);
+//         }
+//     }
+// }
+
+void vSendIMUDistanceDataTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // Master wants distance data
         if (i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS) {
-            uint8_t dist_buffer[DIST_BUFFER_SIZE];
-            dist_buffer[0] = (uint32_t) get_distance_l();
-            dist_buffer[4] = (uint32_t) get_distance_r();
-            i2c_write_raw_blocking(i2c1, dist_buffer, 8);
+
+            // uint8_t dist_per_axis_buffer[DIST_BUFFER_SIZE];
+            // float *pos_buffer = get_imu_position();
+            // float x_dist = pos_buffer[0] - prev_pos[0];
+            // float y_dist = pos_buffer[1] - prev_pos[1];
+            // dist_per_axis_buffer[0] = (uint32_t) x_dist;
+            // dist_per_axis_buffer[4] = (uint32_t) y_dist;
+            // prev_pos[0] = pos_buffer[0];
+            // prev_pos[1] = pos_buffer[1];
+            // i2c_write_raw_blocking(i2c1, dist_per_axis_buffer, DIST_BUFFER_SIZE);
+
+            uint8_t velocities_buffer[VEL_BUFFER_SIZE];
+            get_imu_rot_vel();
+            get_imu_trans_vel();
+            velocities_buffer[0] = (uint64_t) *r_vels;
+            velocities_buffer[8] = (uint64_t) *t_vels;
+
+            // Test
+            printf("IMU Data To Send: " " rot x: %f" " rot y: %f" " trans x: %f\n",
+                velocities_buffer[0], velocities_buffer[4], velocities_buffer[8]);
+
+            i2c_write_raw_blocking(i2c1, velocities_buffer, VEL_BUFFER_SIZE);
         }
     }
 }
@@ -119,26 +171,35 @@ void vPWMOutTask(void *pvParameters) {
     actuator_out(left_duty, right_duty);
 }
 
-void vUpdateIMUDataTask(void *pvParameters) {
+// void vUpdateIMUDataTask(void *pvParameters) {
+
+//     for (;;) {
+//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
+
+//         vector3f linear_acceleration = read_lin_accel();
+//         printf("Linear Acceleration: " " x: %f" " y: %f" " z: %f\n",
+//         linear_acceleration.x, linear_acceleration.y, linear_acceleration.z);
+
+//         quaternion abs_quaternion = read_abs_quaternion();
+//         printf("Absolute Quaternion: " " w: %f" " x: %f" " y: %f" " z: %f\n",
+//         abs_quaternion.w, abs_quaternion.x, abs_quaternion.y, abs_quaternion.z);
+
+//         vector3f euler_angles = read_euler_angles();
+//         printf("Euler Angles: " " Roll: %f" " Pitch: %f" " Yaw: %f\n",
+//         euler_angles.x, euler_angles.y, euler_angles.z);
+
+//         CALIB_STATUS calib_status = read_calib_status();
+//         printf("Calibration Status: " " System: %d" " Gyro: %d" " Accel: %d" " Mag: %d\n",
+//         calib_status.sys, calib_status.gyro, calib_status.accel, calib_status.mag);
+//     }
+// }
+
+void vUpdateLinearAccelTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); 
 
-        vector3f linear_acceleration = read_lin_accel();
-        printf("Linear Acceleration: " " x: %f" " y: %f" " z: %f\n",
-        linear_acceleration.x, linear_acceleration.y, linear_acceleration.z);
-
-        quaternion abs_quaternion = read_abs_quaternion();
-        printf("Absolute Quaternion: " " w: %f" " x: %f" " y: %f" " z: %f\n",
-        abs_quaternion.w, abs_quaternion.x, abs_quaternion.y, abs_quaternion.z);
-
-        vector3f euler_angles = read_euler_angles();
-        printf("Euler Angles: " " Roll: %f" " Pitch: %f" " Yaw: %f\n",
-        euler_angles.x, euler_angles.y, euler_angles.z);
-
-        CALIB_STATUS calib_status = read_calib_status();
-        printf("Calibration Status: " " System: %d" " Gyro: %d" " Accel: %d" " Mag: %d\n",
-        calib_status.sys, calib_status.gyro, calib_status.accel, calib_status.mag);
+        update_trans_vel();
     }
 }
 
@@ -167,8 +228,8 @@ void start_tasks() {
     gpio_init(ENCODER_L_INT_PIN);
     gpio_pull_up(ENCODER_L_INT_PIN);
     init_encoder_l(0.001, 40);
-    gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
-    gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
+    // gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
+    // gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
 
     // Setup I2C1 Bus for the coms with microprocessor
     i2c_init(i2c1, MAX_SCL);
@@ -178,8 +239,8 @@ void start_tasks() {
     gpio_pull_up(I2C_SDA_PIN);
     gpio_pull_up(I2C_SCL_PIN);
     i2c_get_hw(i2c1)->intr_mask = I2C_IC_INTR_MASK_M_RD_REQ_BITS;
-    irq_set_exclusive_handler(I2C1_IRQ, distance_request_isr);
-    irq_set_enabled(I2C1_IRQ, true);
+    // irq_set_exclusive_handler(I2C1_IRQ, distance_request_isr);
+    // irq_set_enabled(I2C1_IRQ, true);
 
     // Setup I2C0 Bus for the coms with IMU
     i2c_init(i2c_default, MAX_SCL);
@@ -188,34 +249,41 @@ void start_tasks() {
     gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
     gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
     imu_init();
-    TimerHandle_t xTimer = xTimerCreate("IMU Timer", pdMS_TO_TICKS(10), pdTRUE, (void *)0, timer_callback);
+    // TimerHandle_t xTimer = xTimerCreate("IMU Timer", pdMS_TO_TICKS(10), pdTRUE, (void *)0, timer_callback);
+    TimerHandle_t xLinearAccelTimer = xTimerCreate("Linear Accel Timer", pdMS_TO_TICKS(10), pdTRUE, (void *)0, linear_accel_timer_callback);
     
     // Setup Tasks
-    xTaskCreate(vEncoderUpdateTask, "Encoder Update Task", 256, NULL, 5, &xTaskHandle);
-    xTaskCreate(vSendDistanceDataTask, "Send Distance Data Task", 256, NULL, 3, &dist_read_task_handle);
+    // xTaskCreate(vEncoderUpdateTask, "Encoder Update Task", 256, NULL, 5, &xTaskHandle);
+    // xTaskCreate(vSendEncoderDistanceDataTask, "Send Encoder Distance Data Task", 256, NULL, 3, &encoder_dist_read_task_handle);
+    xTaskCreate(vSendIMUDistanceDataTask, "Send IMU Distance Data Task", 256, NULL, 3, &imu_dist_read_task_handle);
     xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 3, &pwm_read_task_handle);
     xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 3, &pwm_out_handle);
-    xTaskCreate(vUpdateIMUDataTask, "Update IMU Data Task", 256, NULL, 1, &imu_timer_task_handle);
+    // xTaskCreate(vUpdateIMUDataTask, "Update IMU Data Task", 256, NULL, 1, &imu_timer_task_handle);
+    xTaskCreate(vUpdateLinearAccelTask, "Update LinearAccel Task", 256, NULL, 5, &linear_accel_timer_task_handle);
 
-    if (xTimer != NULL) {
-        xTimerStart(xTimer, 0);
+    // if (xTimer != NULL) {
+    //     xTimerStart(xTimer, 0);
+    // }
+
+    if (xLinearAccelTimer != NULL) {
+        xTimerStart(xLinearAccelTimer, 0);
     }
 
     vTaskStartScheduler();
 }
 
-void encoder_update_isr(uint pin_no, uint32_t event_flags) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    pin_triggered = pin_no;
-    vTaskNotifyGiveFromISR(xTaskHandle, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
+// void encoder_update_isr(uint pin_no, uint32_t event_flags) {
+//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//     pin_triggered = pin_no;
+//     vTaskNotifyGiveFromISR(xTaskHandle, &xHigherPriorityTaskWoken);
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+// }
 
-void distance_request_isr() {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR(dist_read_task_handle, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
+// void distance_request_isr() {
+//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//     vTaskNotifyGiveFromISR(dist_read_task_handle, &xHigherPriorityTaskWoken);
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+// }
 
 void pwm_receive_isr() {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -223,9 +291,15 @@ void pwm_receive_isr() {
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void timer_callback(TimerHandle_t xTimer) {
+// void timer_callback(TimerHandle_t xTimer) {
+//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+//     vTaskNotifyGiveFromISR(imu_timer_task_handle, &xHigherPriorityTaskWoken);
+//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+// }
+
+void linear_accel_timer_callback(TimerHandle_t xTimer) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR(imu_timer_task_handle, &xHigherPriorityTaskWoken);
+    vTaskNotifyGiveFromISR(linear_accel_timer_task_handle, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -288,5 +362,41 @@ void actuator_out(float left_duty_cycle, float right_duty_cycle) {
     
     pwm_update_duty_cycle(r_slice_num, right_duty_cycle);
     pwm_update_duty_cycle(l_slice_num, left_duty_cycle);
+}
+
+
+void get_imu_position() {
+
+    // TODO: Need to accomplish at a regular timestep (i.e. dt)
+    vector3f linear_acceleration = read_lin_accel();
+    integral_x += linear_acceleration.x;
+    integral_y += linear_acceleration.y;
+    double_integral_x += integral_x;
+    double_integral_y += integral_y;
+    current_pos[0] = double_integral_x;
+    current_pos[1] = double_integral_y;
+}
+
+void update_trans_vel() {
+    vector3f linear_acceleration = read_lin_accel();
+    integral_x += linear_acceleration.x;
+    integral_y += linear_acceleration.y;
+    
+    // Test
+    printf("Intefrated Trans Vels: " " x: %f" " y: %f\n",
+        integral_x, integral_y);
+}
+
+void get_imu_trans_vel() {
+
+    t_vels[0] = integral_x;
+    t_vels[1] = integral_y;
+}
+
+void get_imu_rot_vel() {
+
+    vector3f rotational_velocity = read_rot_vel();
+    r_vels[0] = rotational_velocity.x;
+    r_vels[1] = rotational_velocity.y;
 }
 
