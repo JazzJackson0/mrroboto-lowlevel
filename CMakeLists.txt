@@ -51,10 +51,10 @@ target_link_libraries(little_roboto PRIVATE
 )
 
 
-pico_enable_stdio_usb(little_roboto 0) 
-pico_enable_stdio_uart(little_roboto 1) 
+pico_enable_stdio_usb(little_roboto 1) # Send standard I/O messages over USB
+pico_enable_stdio_uart(little_roboto 1) # Send standard I/O messages over UART (to Debugger)
 
-pico_add_extra_outputs(little_roboto)
+pico_add_extra_outputs(little_roboto) # Enable .uf2 output
 
 if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
     message(FATAL_ERROR "Raspberry Pi Pico SDK version 1.3.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
