@@ -1,42 +1,5 @@
 #include "../include/tasks.h"
 
-void init_encoder_r(float _distance_per_tick, float _ticks_per_rotation);
-void init_encoder_l(float _distance_per_tick, float _ticks_per_rotation);
-void encoder_update_r();
-void encoder_update_l();
-float get_distance_r();
-float get_distance_l();
-void actuator_out(float left_duty_cycle, float right_duty_cycle);
-void get_imu_position();
-void update_imu_velocities();
-
-// void vEncoderUpdateTask(void *pvParameters);
-// void vSendEncoderDistanceDataTask(void *pvParameters);
-void vSendIMUDistanceDataTask(void *pvParameters); 
-void vReceivePWMDataTask(void *pvParameters);
-void vPWMOutTask(void *pvParameters);
-// void vUpdateIMUDataTask(void *pvParameters);
-// void vUpdateLinearAccelTask(void *pvParameters);
-
-// void encoder_update_isr(uint pin_no, uint32_t event_flags);
-// void distance_request_isr();
-void pwm_receive_isr();
-void timer_callback(TimerHandle_t xTimer);
-void linear_accel_timer_callback(TimerHandle_t xLinearAccelTimer);
-
-int global_total_tick_count_r;
-int total_tick_count_r;
-int tick_count_r;
-int ticks_per_rotation_r;
-int rotation_count_r;
-int distance_per_tick_r;
-int global_total_tick_count_l;
-int total_tick_count_l;
-int tick_count_l;
-int ticks_per_rotation_l;
-int rotation_count_l;
-int distance_per_tick_l;
-
 #define DATA_RATE_HZ 100
 #define MAX_SCL 400000
 #define I2C_ADDR 0x055 // Default Slave Address
@@ -51,6 +14,52 @@ int distance_per_tick_l;
 #define DIST_BUFFER_SIZE 8
 #define VEL_BUFFER_SIZE 16
 #define PWM_BUFFER_SIZE 8
+
+void init_encoder_r(float _distance_per_tick, float _ticks_per_rotation);
+void init_encoder_l(float _distance_per_tick, float _ticks_per_rotation);
+void encoder_update_r();
+void encoder_update_l();
+float get_distance_r();
+float get_distance_l();
+void actuator_out(float left_duty_cycle, float right_duty_cycle);
+void get_imu_position();
+void update_imu_velocities();
+// void encoder_update_isr(uint pin_no, uint32_t event_flags);
+void distance_request_isr();
+void pwm_receive_isr();
+void timer_callback(TimerHandle_t xTimer);
+void linear_accel_timer_callback(TimerHandle_t xLinearAccelTimer);
+
+// void vEncoderUpdateTask(void *pvParameters);
+// void vSendEncoderDistanceDataTask(void *pvParameters);
+void vUpdateIMUDistanceDataTask(void *pvParameters); 
+void vSendIMUDistanceDataTask(void *pvParameters); 
+void vReceivePWMDataTask(void *pvParameters);
+void vPWMOutTask(void *pvParameters);
+// void vUpdateIMUDataTask(void *pvParameters);
+// void vUpdateLinearAccelTask(void *pvParameters);
+
+TaskHandle_t xTaskHandle = NULL;
+TaskHandle_t encoder_dist_read_task_handle = NULL;
+TaskHandle_t imu_dist_read_task_handle = NULL;
+TaskHandle_t imu_dist_send_task_handle = NULL;
+TaskHandle_t pwm_read_task_handle = NULL;
+TaskHandle_t imu_timer_task_handle = NULL;
+TaskHandle_t pwm_out_handle = NULL;
+TaskHandle_t linear_accel_task_handle = NULL;
+
+int global_total_tick_count_r;
+int total_tick_count_r;
+int tick_count_r;
+int ticks_per_rotation_r;
+int rotation_count_r;
+int distance_per_tick_r;
+int global_total_tick_count_l;
+int total_tick_count_l;
+int tick_count_l;
+int ticks_per_rotation_l;
+int rotation_count_l;
+int distance_per_tick_l;
 
 volatile float left_duty = 0;
 volatile float right_duty = 0;
@@ -68,13 +77,7 @@ uint r_slice_num;
 uint l_slice_num;
 uint pin_triggered;
 
-TaskHandle_t xTaskHandle = NULL;
-TaskHandle_t encoder_dist_read_task_handle = NULL;
-TaskHandle_t imu_dist_read_task_handle = NULL;
-TaskHandle_t pwm_read_task_handle = NULL;
-TaskHandle_t imu_timer_task_handle = NULL;
-TaskHandle_t pwm_out_handle = NULL;
-TaskHandle_t linear_accel_task_handle = NULL;
+
 
 // void vEncoderUpdateTask(void *pvParameters) {
 
@@ -105,6 +108,15 @@ TaskHandle_t linear_accel_task_handle = NULL;
 //     }
 // }
 
+void vUpdateIMUDistanceDataTask(void *pvParameters) {
+
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        update_imu_velocities();
+    }
+}
+
 void vSendIMUDistanceDataTask(void *pvParameters) {
 
     for (;;) {
@@ -124,15 +136,14 @@ void vSendIMUDistanceDataTask(void *pvParameters) {
             // i2c_write_raw_blocking(i2c1, dist_per_axis_buffer, DIST_BUFFER_SIZE);
 
             uint8_t velocities_buffer[VEL_BUFFER_SIZE];
-            update_imu_velocities();
+            memcpy(&velocities_buffer[0], r_vels, sizeof(r_vels));
+            memcpy(&velocities_buffer[8], t_vels, sizeof(t_vels));
             i2c_write_raw_blocking(i2c1, velocities_buffer, VEL_BUFFER_SIZE);
 
             // // Test
             // printf("Sensor Rotations: " " x: %f" " y: %f\n", r_vels[0], r_vels[1]);
             // // Test
             // printf("Sensor Trans: " " x: %f" " y: %f\n", t_vels[0], t_vels[1]);
-            // memcpy(&velocities_buffer[0], r_vels, sizeof(r_vels));
-            // memcpy(&velocities_buffer[8], t_vels, sizeof(t_vels));
 
             // // Test
             // printf("IMU Data To Send: " " rot x: %f" " rot y: %f" " trans x: %f" " trans y: %f\n\n",
@@ -205,6 +216,8 @@ void start_tasks() {
     // PWM Setup
     r_slice_num = pwm_setup(MOTOR_R_PIN);
     l_slice_num = pwm_setup(MOTOR_L_PIN);
+
+    // Setup UART for PWM comms from Microprocessor
     uart_init(UART_ID, 115200);
     gpio_set_function(0, GPIO_FUNC_UART); // UART0 TX
     gpio_set_function(1, GPIO_FUNC_UART); // UART0 RX
@@ -231,8 +244,8 @@ void start_tasks() {
     gpio_pull_up(I2C_SDA_PIN);
     gpio_pull_up(I2C_SCL_PIN);
     i2c_get_hw(i2c1)->intr_mask = I2C_IC_INTR_MASK_M_RD_REQ_BITS;
-    // irq_set_exclusive_handler(I2C1_IRQ, distance_request_isr);
-    // irq_set_enabled(I2C1_IRQ, true);
+    irq_set_exclusive_handler(I2C1_IRQ, distance_request_isr);
+    irq_set_enabled(I2C1_IRQ, true);
 
     // Setup I2C0 Bus for the coms with IMU
     i2c_init(i2c_default, MAX_SCL);
@@ -246,9 +259,10 @@ void start_tasks() {
     // Setup Tasks
     // xTaskCreate(vEncoderUpdateTask, "Encoder Update Task", 256, NULL, 5, &xTaskHandle);
     // xTaskCreate(vSendEncoderDistanceDataTask, "Send Encoder Distance Data Task", 256, NULL, 3, &encoder_dist_read_task_handle);
-    xTaskCreate(vSendIMUDistanceDataTask, "Send IMU Distance Data Task", 256, NULL, 3, &imu_dist_read_task_handle);
-    xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 3, &pwm_read_task_handle);
-    xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 3, &pwm_out_handle);
+    xTaskCreate(vUpdateIMUDistanceDataTask, "Update IMU Distance Data Task", 256, NULL, 2, &imu_dist_read_task_handle);
+    xTaskCreate(vSendIMUDistanceDataTask, "Send IMU Distance Data Task", 256, NULL, 3, &imu_dist_send_task_handle);
+    xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 2, &pwm_read_task_handle);
+    xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 2, &pwm_out_handle);
     // xTaskCreate(vUpdateIMUDataTask, "Update IMU Data Task", 256, NULL, 1, &imu_timer_task_handle);
 
     if (xTimer != NULL) {
@@ -266,11 +280,11 @@ void start_tasks() {
 //     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 // }
 
-// void distance_request_isr() {
-//     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-//     vTaskNotifyGiveFromISR(dist_read_task_handle, &xHigherPriorityTaskWoken);
-//     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-// }
+void distance_request_isr() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(imu_dist_send_task_handle, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 
 void pwm_receive_isr() {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -363,20 +377,20 @@ void get_imu_position() {
 
 void update_imu_velocities() {
 
-    // Update Rotational Vels
-    vector3f rotational_velocity = read_rot_vel();
-    r_vels[0] = rotational_velocity.x;
-    r_vels[1] = rotational_velocity.y;
-
     // Update Translational Vels
     vector3f linear_acceleration = read_lin_accel();
     integral_x += linear_acceleration.x;
     integral_y += linear_acceleration.y;
     t_vels[0] = integral_x;
     t_vels[1] = integral_y;
-    
+
+    // Update Rotational Vels
+    vector3f rotational_velocity = read_rot_vel();
+    r_vels[0] = rotational_velocity.x;
+    r_vels[1] = rotational_velocity.y;
+
     // Test
-    // printf("Trans Vels: " " x: %f" " y: %f\n", integral_x, integral_y);
+    printf("Trans Vels: " " x: %f" " y: %f\n", integral_x, integral_y);
 
 }
 // --------------------------------------------------------------------------------------
