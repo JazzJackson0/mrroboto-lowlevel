@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.12)
 
-# Specify compilers and language standards
+# Pull in SDK (must be before project())
+include(pico_sdk_import.cmake)
+
+# Pull in FreeRTOS
 set(FREERTOS_KERNEL_PATH ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS-Kernel)
+include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
@@ -11,17 +16,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
 
 # Set the Pico board
-set(PICO_BOARD pico_w)
+# set(PICO_BOARD pico_w)
+# set(PICO_BOARD pico)
 
 # Set FreeRTOS port
 # set(FREERTOS_PORT GCC_ARM_CM0 CACHE STRING "")
 
-# Pull in SDK (must be before project())
-include(pico_sdk_import.cmake)
 project(little_roboto C CXX ASM)
 
-# Pull in FreeRTOS
-include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+# Initialize Pico SDK
 pico_sdk_init()
 
 # Add source files
@@ -33,8 +36,9 @@ add_executable(little_roboto
 )
 
 target_include_directories(little_roboto PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src # Where "FreeRTOSConfig.h" is.
+    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/../FreeRTOS-Kernel/include
+    ${CMAKE_CURRENT_LIST_DIR}/../FreeRTOS-Kernel/portable/GCC/RP2040
 )
 
 
@@ -43,9 +47,11 @@ target_link_libraries(little_roboto PRIVATE
     pico_stdlib             # Link Pico SDK standard library
     hardware_i2c            # Link hardware_i2c
     hardware_pwm            # Link hardware_pwm
-    pico_cyw43_arch_none    # WiFi chip
+
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4
+
+    # pico_cyw43_arch_none    # WiFi chip
     # -nostartfiles           # Optional: to avoid the startup code from libc
     # -specs=nosys.specs      # Prevent standard library from expecting system-level routines
 )

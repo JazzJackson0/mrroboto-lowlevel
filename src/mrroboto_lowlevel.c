@@ -1,16 +1,14 @@
 #include <stdio.h>
 #include "../include/tasks.h"
-// #include "boards/pico_w.h"
-// #include "pico/stdlib.h"
 
 
 int main(int argc, char *argv) {
 
     stdio_init_all();
-    if (cyw43_arch_init()) {
-        printf("Wi-Fi init failed");
-        return -1;
-    }
+    // if (cyw43_arch_init()) {
+    //     printf("Wi-Fi init failed");
+    //     return -1;
+    // }
 
     start_tasks();
 
@@ -18,8 +16,7 @@ int main(int argc, char *argv) {
         tight_loop_contents();
     }
 
-    cyw43_arch_deinit();
-    return 0;
+    // cyw43_arch_deinit();
 }
 
 
