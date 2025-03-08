@@ -116,12 +116,12 @@ void vSendIMUDistanceDataTask(void *pvParameters) {
         memcpy(&velocities_buffer[0], r_vels, sizeof(r_vels));
         memcpy(&velocities_buffer[8], t_vels, sizeof(t_vels));
 
-        // i2c_write_raw_blocking(i2c1, velocities_buffer, VEL_BUFFER_SIZE);
-        for (size_t i = 0; i < VEL_BUFFER_SIZE; i++) {
-            // while (!(i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS));  // Wait for FIFO space
-            i2c_get_hw(i2c1)->data_cmd = velocities_buffer[i];  // Load next byte into FIFO
-            // printf("Adding 0x%x. Valid Entries in FIFO: %d\n", velocities_buffer[i], i2c_get_hw(i2c1)->txflr);
-        }
+        i2c_write_raw_blocking(i2c1, velocities_buffer, VEL_BUFFER_SIZE);
+        // for (size_t i = 0; i < VEL_BUFFER_SIZE; i++) {
+        //     while (!(i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS));  // Wait for FIFO space
+        //     i2c_get_hw(i2c1)->data_cmd = velocities_buffer[i];  // Load next byte into FIFO
+        //     // printf("Adding 0x%x. Valid Entries in FIFO: %d\n", velocities_buffer[i], i2c_get_hw(i2c1)->txflr);
+        // }
     }
 }
 
@@ -285,12 +285,16 @@ void distance_request_isr() {
 void pwm_receive_isr() {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    uint32_t status = uart_get_hw(uart1)->ris;
+    uint32_t status = uart_get_hw(uart1)->mis;
 
-    if (status & UART_UARTRIS_RXRIS_BITS) {
+    if (status & UART_UARTMIS_RXMIS_BITS) {
         uart_get_hw(uart1)->icr |= UART_UARTICR_RXIC_BITS;
         vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+
+    if (status & UART_UARTMIS_RTMIS_BITS) {
+        uart_get_hw(uart1)->icr |= UART_UARTICR_RTIC_BITS;
     }
     
 }
@@ -385,6 +389,13 @@ static void update_imu_velocities() {
 
     // Update Translational Vels
     vector3f linear_acceleration = read_lin_accel();
+
+    // Avoid accumulating error for near-zero accelerations
+    if (linear_acceleration.x > 0 && linear_acceleration.x < 1) { linear_acceleration.x = floor(linear_acceleration.x); }
+    else if (linear_acceleration.x > -1 && linear_acceleration.x < 0) { linear_acceleration.x = ceil(linear_acceleration.x); }
+    if (linear_acceleration.y > 0 && linear_acceleration.y < 1) { linear_acceleration.y = floor(linear_acceleration.y); }
+    else if (linear_acceleration.y > -1 && linear_acceleration.y < 0) { linear_acceleration.y = ceil(linear_acceleration.y); }
+
     integral_x += linear_acceleration.x;
     integral_y += linear_acceleration.y;
     t_vels[0] = integral_x;

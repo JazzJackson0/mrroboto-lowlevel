@@ -80,9 +80,9 @@ vector3f read_accel() {
     y = ((int16_t)accel[2]) | (((int16_t)accel[3]) << 8);
     z = ((int16_t)accel[4]) | (((int16_t)accel[5]) << 8);
 
-    acceleration.x = ((float)x) / 100.0;
-    acceleration.y = ((float)y) / 100.0;
-    acceleration.z = ((float)z) / 100.0;
+    acceleration.x = ((float)x) / LSB_ACCEL;
+    acceleration.y = ((float)y) / LSB_ACCEL;
+    acceleration.z = ((float)z) / LSB_ACCEL;
 
     return acceleration;
 }
@@ -101,9 +101,10 @@ vector3f read_lin_accel() {
     y = ((int16_t)accel[2]) | (((int16_t)accel[3]) << 8);
     z = ((int16_t)accel[4]) | (((int16_t)accel[5]) << 8);
 
-    linear_acceleration.x = ((float)x) / 100.0;
-    linear_acceleration.y = ((float)y) / 100.0;
-    linear_acceleration.z = ((float)z) / 100.0;
+    // reg_val / LSB = m/s^2
+    linear_acceleration.x = ((float)x) / LSB_ACCEL;
+    linear_acceleration.y = ((float)y) / LSB_ACCEL;
+    linear_acceleration.z = ((float)z) / LSB_ACCEL;
 
     return linear_acceleration;
 }
@@ -121,9 +122,15 @@ vector3f read_rot_vel() {
     y = ((int16_t)rot_vel[2]) | (((int16_t)rot_vel[3]) << 8);
     z = ((int16_t)rot_vel[4]) | (((int16_t)rot_vel[5]) << 8);
 
-    rotational_vel.x = ((float)x) / 100.0;
-    rotational_vel.y = ((float)y) / 100.0;
-    rotational_vel.z = ((float)z) / 100.0;
+    // reg_val / LSB = DPS
+    rotational_vel.x = ((float)x) / LSB_ROT;
+    rotational_vel.y = ((float)y) / LSB_ROT;
+    rotational_vel.z = ((float)z) / LSB_ROT;
+
+    // rad/s
+    // rotational_vel.x = ((float)x) * (M_PI / 180.f);
+    // rotational_vel.y = ((float)y) * (M_PI / 180.f);
+    // rotational_vel.z = ((float)z) * (M_PI / 180.f);
 
     return rotational_vel;
 }

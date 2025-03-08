@@ -1,6 +1,7 @@
 #ifndef BN0055_H
 #define BNO055_H
 #include <stdio.h>
+#include <math.h>
 #include "boards/pico_w.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
@@ -27,6 +28,9 @@
 #define BNO055_EULER_H_LSB_REG 0X1A
 #define BNO055_ACCEL_DATA_X_LSB_REG 0X08
 #define BNO055_GYR_DATA_X_LSB_REG 0X14
+
+#define LSB_ACCEL 100.f // 100 LSB = 1 m/s²
+#define LSB_ROT 16.f // 16 LSB = 1 °/s
 
 
 struct _quaternion {
