@@ -6,10 +6,13 @@ static void encoder_update_r();
 static void encoder_update_l();
 static float get_distance_r();
 static float get_distance_l();
-static void actuator_out(float left_duty_cycle, float right_duty_cycle);
-static void get_imu_position();
+static void actuator_out(float left_duty_cycle_percent, float right_duty_cycle_percent);
 static void update_imu_velocities();
 // void encoder_update_isr(uint pin_no, uint32_t event_flags);
+static float complementary_filter(float gyro_old, float gyro_new, float accel);
+static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel);
+static update_array(float32_t arr[], float32_t val, int array_size, int idx);
+static float median_filter(float32_t vals[], float32_t val);
 
 void distance_request_isr();
 void pwm_receive_isr();
@@ -25,7 +28,6 @@ void vReceivePWMDataTask(void *pvParameters);
 void vPWMOutTask(void *pvParameters);
 // void vUpdateIMUDataTask(void *pvParameters);
 // void vUpdateLinearAccelTask(void *pvParameters);
-
 
 TaskHandle_t xTaskHandle = NULL;
 TaskHandle_t encoder_dist_read_task_handle = NULL;
@@ -49,21 +51,37 @@ static volatile int ticks_per_rotation_l;
 static volatile int rotation_count_l;
 static volatile int distance_per_tick_l;
 
-volatile float left_duty = 0;
-volatile float right_duty = 0;
+volatile float left_duty_percent = 0;
+volatile float right_duty_percent = 0;
 
-volatile float integral_x = 0.f;
-volatile float double_integral_x = 0.f;
-volatile float integral_y = 0.f;
-volatile float double_integral_y = 0.f;
+volatile float32_t integral_xs[BLOCK_SIZE] = {0};
+volatile float32_t integral_ys[BLOCK_SIZE] = {0};
+volatile int integral_count = 0;
+
 volatile float prev_pos[2];
-volatile float current_pos[2];
 volatile float t_vels[2];
 volatile float r_vels[2];
+
+
+float filtered_accels_x[MEDIAN_FILTER_SIZE] = {0};
+float filtered_accels_y[MEDIAN_FILTER_SIZE] = {0};
 
 uint r_slice_num;
 uint l_slice_num;
 uint pin_triggered;
+
+// IIR Filter Parameters
+arm_biquad_casd_df1_inst_q31 filter_x;
+arm_biquad_casd_df1_inst_q31 filter_y;
+float32_t raw_coeffs[NUM_COEFFS] = {7.699098914706358e-09, 1.5398197571172107e-08, 7.699099026177254e-09, 
+                      1.0, -1.9654195032783257, 0.9657687174143698, 1.0, 2.000000033541675,
+                      0.9999999855215732, 1.0, -1.985324587198886, 0.9856773380490558};
+q31_t coeffs[NUM_COEFFS] = {0};
+q31_t state_x[2 * NUM_STAGES] = {0}; // Stores intermediate filter states during filtering (Where recursive iir filter stores past values)
+q31_t state_y[2 * NUM_STAGES] = {0}; // Stores intermediate filter states during filtering (Where recursive iir filter stores past values)
+bool filter = false;
+
+Quaternion global_orientation;
 
 
 // void vEncoderUpdateTask(void *pvParameters) {
@@ -142,13 +160,13 @@ void vReceivePWMDataTask(void *pvParameters) {
         printf("%d, %d, %d, %d, %d, %d, %d, %d\n", pwm_buffer[0], pwm_buffer[1], pwm_buffer[2], 
                     pwm_buffer[3], pwm_buffer[4], pwm_buffer[5], pwm_buffer[6], pwm_buffer[7]);
 
-        // left_duty = (float) (((uint32_t)pwm_buffer[0] << 24) 
+        // left_duty_percent = (float) (((uint32_t)pwm_buffer[0] << 24) 
         //     | ((uint32_t)pwm_buffer[1] << 16) | ((uint32_t)pwm_buffer[2] << 8) | ((uint32_t)pwm_buffer[3]));
-        // right_duty = (float) (((uint32_t)pwm_buffer[4] << 24) 
+        // right_duty_percent = (float) (((uint32_t)pwm_buffer[4] << 24) 
         //     | ((uint32_t)pwm_buffer[5] << 16) | ((uint32_t)pwm_buffer[6] << 8) | ((uint32_t)pwm_buffer[7]));
         
         // // Test
-        // printf("PWM: " " left duty: %f" " right duty: %f\n", left_duty, right_duty);
+        // printf("PWM: " " left duty: %f" " right duty: %f\n", left_duty_percent, right_duty_percent);
         
         
         // xTaskNotify(pwm_out_handle, 0, eNoAction);
@@ -159,7 +177,7 @@ void vPWMOutTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        actuator_out(left_duty, right_duty);
+        actuator_out(left_duty_percent, right_duty_percent);
     }
 }
 
@@ -190,6 +208,16 @@ void vPWMOutTask(void *pvParameters) {
 
 
 void start_tasks() {
+
+    global_orientation.q0 = 1;
+    global_orientation.q1 = 0;
+    global_orientation.q2 = 0;
+    global_orientation.q3 = 0;
+
+    // Setup IIR Filters (q31 is optimized for M0+ processors)
+    arm_float_to_q31(raw_coeffs, coeffs, NUM_COEFFS);
+    arm_biquad_cascade_df1_init_q31(&filter_x, NUM_STAGES, coeffs, state_x, POST_SHIFT);
+    arm_biquad_cascade_df1_init_q31(&filter_y, NUM_STAGES, coeffs, state_y, POST_SHIFT);
 
     // PWM Setup
     r_slice_num = pwm_setup(MOTOR_R_PIN);
@@ -368,59 +396,143 @@ static float get_distance_l() {
 
 
 // IMU Data----------------------------------------------------------------------------------
-static void get_imu_position() {
-
-    // TODO: Need to accomplish at a regular timestep (i.e. dt)
-    vector3f linear_acceleration = read_lin_accel();
-    integral_x += linear_acceleration.x;
-    integral_y += linear_acceleration.y;
-    double_integral_x += integral_x;
-    double_integral_y += integral_y;
-    current_pos[0] = double_integral_x;
-    current_pos[1] = double_integral_y;
-}
-
-
 static void update_imu_velocities() {
-    
-    // TODO: Try this instead of globals
-    // static float integral_x = 0;
-    // static float integral_y = 0;
+
+    static volatile float32_t accels_x_raw[BLOCK_SIZE] = {0};
+    static volatile q31_t accels_x_in[BLOCK_SIZE] = {0};
+    static volatile q31_t accels_x_out[BLOCK_SIZE] = {0};
+    static volatile float32_t accels_x_filtered[BLOCK_SIZE] = {0};
+    static volatile float32_t accels_y_raw[BLOCK_SIZE] = {0};
+    static volatile q31_t accels_y_in[BLOCK_SIZE] = {0};
+    static volatile q31_t accels_y_out[BLOCK_SIZE] = {0};
+    static volatile float32_t accels_y_filtered[BLOCK_SIZE] = {0};
+    static volatile float raw_integral_x = 0.f;
+    static volatile float raw_integral_y = 0.f;
+    static volatile int accels_count = 0;
 
     // Update Translational Vels
     vector3f linear_acceleration = read_lin_accel();
 
-    // Avoid accumulating error for near-zero accelerations
-    if (linear_acceleration.x > 0 && linear_acceleration.x < 1) { linear_acceleration.x = floor(linear_acceleration.x); }
-    else if (linear_acceleration.x > -1 && linear_acceleration.x < 0) { linear_acceleration.x = ceil(linear_acceleration.x); }
-    if (linear_acceleration.y > 0 && linear_acceleration.y < 1) { linear_acceleration.y = floor(linear_acceleration.y); }
-    else if (linear_acceleration.y > -1 && linear_acceleration.y < 0) { linear_acceleration.y = ceil(linear_acceleration.y); }
+    if (accels_count < BLOCK_SIZE)
+        accels_count++;
 
-    integral_x += linear_acceleration.x;
-    integral_y += linear_acceleration.y;
-    t_vels[0] = integral_x;
-    t_vels[1] = integral_y;
+    // Avoid accumulating error for near-zero accelerations
+    // if (linear_acceleration.x > 0 && linear_acceleration.x < 1) { linear_acceleration.x = floor(linear_acceleration.x); }
+    // else if (linear_acceleration.x > -1 && linear_acceleration.x < 0) { linear_acceleration.x = ceil(linear_acceleration.x); }
+    // if (linear_acceleration.y > 0 && linear_acceleration.y < 1) { linear_acceleration.y = floor(linear_acceleration.y); }
+    // else if (linear_acceleration.y > -1 && linear_acceleration.y < 0) { linear_acceleration.y = ceil(linear_acceleration.y); }
 
     // Update Rotational Vels
     vector3f rotational_velocity = read_rot_vel();
     r_vels[0] = rotational_velocity.x;
     r_vels[1] = rotational_velocity.y;
 
+    // Rotate Accelerations into Global Space
+    update_global_orientation(rotational_velocity, linear_acceleration);
+    float global_acceleration[4] = {1, linear_acceleration.x, linear_acceleration.y, linear_acceleration.z};
+    Rotate_Vector(global_acceleration, global_orientation);
+
+    // Filter the Accelerations
+    // update_array(accels_x_raw, global_acceleration[1], BLOCK_SIZE, accels_count);
+    // update_array(accels_y_raw, global_acceleration[2], BLOCK_SIZE, accels_count);
+    update_array(accels_x_raw, linear_acceleration.x, BLOCK_SIZE, accels_count);
+    update_array(accels_y_raw, linear_acceleration.y, BLOCK_SIZE, accels_count);
+    if (accels_count >= BLOCK_SIZE) {
+        arm_float_to_q31(accels_x_raw, accels_x_in, BLOCK_SIZE);
+        arm_float_to_q31(accels_y_raw, accels_y_in, BLOCK_SIZE);
+        arm_biquad_cascade_df1_q31(&filter_x, accels_x_in, accels_x_out, BLOCK_SIZE);
+        arm_biquad_cascade_df1_q31(&filter_y, accels_y_in, accels_y_out, BLOCK_SIZE);
+        arm_q31_to_float(accels_x_out, accels_x_filtered, BLOCK_SIZE);
+        arm_q31_to_float(accels_y_out, accels_y_filtered, BLOCK_SIZE);
+        
+        raw_integral_x += accels_x_filtered[BLOCK_SIZE - 1] * DT;
+        raw_integral_y += accels_x_filtered[BLOCK_SIZE - 1] * DT;
+    }
+
     // // Test
+    // printf("Accels: " " x: %f" " y: %f\n", linear_acceleration.x, linear_acceleration.y);
     // printf("Trans Vels: " " x: %f" " y: %f\n", integral_x, integral_y);
+    // printf("Rotational Vels: " " x: %f" " y: %f\n", rotational_velocity.x, rotational_velocity.y);
 
 }
 // --------------------------------------------------------------------------------------
 
+static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel) {
+    static Quaternion gyro_angles = {1, 0, 0, 0};
+    gyro_angles.q1 = complementary_filter(gyro_angles.q1, rotational_velocity.x, linear_accel.x);
+    gyro_angles.q2 = complementary_filter(gyro_angles.q2, rotational_velocity.y, linear_accel.y);
+    gyro_angles.q3 = complementary_filter(gyro_angles.q3, rotational_velocity.z, linear_accel.z);
+
+    // Update Global Orientation
+    Quaternion res = MultiplyQuaternions(global_orientation, gyro_angles);
+    ScalarMultiplyQuaternion(&res, 0.5);
+    ScalarMultiplyQuaternion(&res, DT);
+    global_orientation = AddQuaternions(global_orientation, res);
+    NormalizeQuaternion(&global_orientation);
+
+}
+
+static float complementary_filter(float gyro_old, float gyro_new, float accel) {
+    return (GYRO_WEIGHT * (gyro_old + (gyro_new * DT))) + (ACCEL_WEIGHT * accel);
+}
 
 // Actuator----------------------------------------------------------------------------------
-static void actuator_out(float left_duty_cycle, float right_duty_cycle) {
+static void actuator_out(float left_duty_cycle_percent, float right_duty_cycle_percent) {
     
-    pwm_update_duty_cycle(r_slice_num, right_duty_cycle);
-    pwm_update_duty_cycle(l_slice_num, left_duty_cycle);
+    pwm_update_duty_cycle(r_slice_num, right_duty_cycle_percent);
+    pwm_update_duty_cycle(l_slice_num, left_duty_cycle_percent);
 }
 // --------------------------------------------------------------------------------------
 
+static update_array(float32_t arr[], float32_t val, int array_size, int idx) {
+
+    // Remove the oldest value
+    if (idx > (array_size - 1)) {
+        for (int i = 1; i < array_size; i++)
+            arr[i - 1] = arr[i];
+    }
+
+    // Insert new value
+    arr[idx] = val;
+}
+
+static float median_filter(float32_t vals[], float32_t val) {
+    // float32_t vals[BLOCK_SIZE];
+    // memcpy(vals, arr, BLOCK_SIZE * sizeof(float32_t));
+    // // Insertion Sort
+    // for (int i = 0; i < BLOCK_SIZE; i++) {    
+    //     for (int j = i; j > 0; j--) {
+    //         if (vals[j] < vals[j - 1]) {
+    //             float temp = vals[j - 1];
+    //             vals[j - 1] = vals[j];
+    //             vals[j] = temp;
+    //         }
+    //     }
+    // }
+    
+    // return vals[BLOCK_SIZE / 2];
+
+    static int index = 0;
+
+    update_array(vals, val, MEDIAN_FILTER_SIZE, index);
+
+    if (index == MEDIAN_FILTER_SIZE)
+        index = 0;
+
+    // Maintain sorted order
+    for (int j = index; j > 0; j--) {
+        if (vals[j] < vals[j - 1]) {
+            float temp = vals[j - 1];
+            vals[j - 1] = vals[j];
+            vals[j] = temp;
+        }
+    }
+    
+
+    index++;
+
+    return index == MEDIAN_FILTER_SIZE? (vals[MEDIAN_FILTER_SIZE / 2]) : vals[0];
+}
 
 
 
