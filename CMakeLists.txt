@@ -12,6 +12,8 @@ set(CMAKE_C_COMPILER arm-none-eabi-gcc)
 set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
+add_definitions(-DARM_MATH_CM0PLUS) # M0+ Processor (For CMSIS-DSP)
+
 # Enable Debugging
 set(CMAKE_BUILD_TYPE Debug)
 
@@ -33,6 +35,7 @@ add_executable(little_roboto
     src/tasks.c 
     src/pwm.c 
     src/bno055.c
+    src/Quaternions.c
 )
 
 target_include_directories(little_roboto PRIVATE
@@ -41,9 +44,25 @@ target_include_directories(little_roboto PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/../FreeRTOS-Kernel/portable/GCC/RP2040
 )
 
+# Add IIR Filter Includes
+include_directories(${CMSISDSP}/Include)
+include_directories(${CMSISDSP}/Include/dsp)
+include_directories(${CMSISCORE}/Include)
+
+# Create IIR Filter Static Library
+set(CMSIS_DSP_SRC
+    ${CMSISDSP}/Source/FilteringFunctions/arm_biquad_cascade_df1_q31.c
+    ${CMSISDSP}/Source/FilteringFunctions/arm_biquad_cascade_df1_init_q31.c
+    ${CMSISDSP}/Source/CommonTables/arm_common_tables.c   
+    ${CMSISDSP}/Source/SupportFunctions/arm_float_to_q31.c 
+    ${CMSISDSP}/Source/SupportFunctions/arm_q31_to_float.c 
+)
+add_library(CMSISDSP STATIC ${CMSIS_DSP_SRC})
 
 # Link FreeRTOS, Pico SDK libraries, and any other required libraries
+set(LINKER_FLAGS "-Wl,-Map=${CMAKE_CURRENT_SOURCE_DIR}/doc/output.map")
 target_link_libraries(little_roboto PRIVATE
+    ${LINKER_FLAGS}
     pico_stdlib             # Link Pico SDK standard library
     hardware_i2c            # Link hardware_i2c
     hardware_pwm            # Link hardware_pwm
@@ -51,6 +70,8 @@ target_link_libraries(little_roboto PRIVATE
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4
 
+    CMSISDSP                  # CMSIS-DSP Custom Static Library
+    
     # pico_cyw43_arch_none    # WiFi chip
     # -nostartfiles           # Optional: to avoid the startup code from libc
     # -specs=nosys.specs      # Prevent standard library from expecting system-level routines
