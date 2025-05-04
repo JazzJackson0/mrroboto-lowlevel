@@ -33,8 +33,9 @@ Pins:
     + gnd: (38)
 
 
-
-
+Add CMSIS-DSP to build
+----------------------
+cmake .. -DCMSISCORE=cmsis-core-master -DCMSISDSP=CMSIS-DSP-main
 
 
 
