@@ -18,7 +18,7 @@
 
 
 
-uint pwm_setup(int pin_num);
+uint pwmSetup(int pin_num);
 
 /**
  * @brief 
@@ -26,7 +26,7 @@ uint pwm_setup(int pin_num);
  * @param slice_num 
  * @param duty_cycle_percent Duty Cycle Percent from 0 - 1
  */
-void pwm_update_duty_cycle(uint slice_num, float  duty_cycle_percent);
+void pwmUpdateDutyCycle(uint slice_num, float  duty_cycle_percent);
 
 /**
  * @brief 
@@ -34,7 +34,7 @@ void pwm_update_duty_cycle(uint slice_num, float  duty_cycle_percent);
  * @param slice_num 
  * @param percent Percent from 0 - 1
  */
-void pwm_update_servo_percent(uint slice_num, float percent);
+void pwmUpdateServoPercent(uint slice_num, float percent);
 
 
 

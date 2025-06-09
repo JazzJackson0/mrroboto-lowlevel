@@ -62,14 +62,14 @@ typedef struct _CALIB_STATUS CALIB_STATUS;
  * @brief 
  * 
  */
-void imu_init();
+void imuInit();
 
 /**
  * @brief 
  * 
  * @return CALIB_STATUS 
  */
-CALIB_STATUS read_calib_status();
+CALIB_STATUS readCalibStatus();
 
 /**
  * @brief Includes the effects of gravity as well as any motion-induced accelerations.
@@ -78,7 +78,7 @@ CALIB_STATUS read_calib_status();
  * 
  * @return vector3f 
  */
-vector3f read_accel();
+vector3f readAccel();
 
 /**
  * @brief Acceleration with the gravity component removed. Represents only the acceleration due to the motion of the sensor.
@@ -87,28 +87,28 @@ vector3f read_accel();
  * 
  * @return vector3f 
  */
-vector3f read_lin_accel();
+vector3f readLinAccel();
 
 /**
  * @brief Rotational velocity (Radians)
  * 
  * @return vector3f 
  */
-vector3f read_rot_vel(); 
+vector3f readRotVel(); 
 
 /**
  * @brief 
  * 
  * @return quaternion 
  */
-quaternion read_abs_quaternion();
+quaternion readAbsQuaternion();
 
 /**
  * @brief 
  * 
  * @return vector3f 
  */
-vector3f read_euler_angles();
+vector3f readEulerAngles();
 
 
 

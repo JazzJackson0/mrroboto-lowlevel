@@ -1,7 +1,7 @@
 #include "../include/Quaternions.h"
 
 
-Quaternion AddQuaternions(Quaternion q, Quaternion p) {
+Quaternion addQuaternions(Quaternion q, Quaternion p) {
    
     Quaternion r = { 
         q.q0 + p.q0,
@@ -13,7 +13,7 @@ Quaternion AddQuaternions(Quaternion q, Quaternion p) {
     return r;
 }
 
-Quaternion SubtractQuaternions(Quaternion q, Quaternion p) {
+Quaternion subtractQuaternions(Quaternion q, Quaternion p) {
     Quaternion r = { 
         q.q0 - p.q0,
         q.q1 - p.q1,
@@ -24,14 +24,14 @@ Quaternion SubtractQuaternions(Quaternion q, Quaternion p) {
     return r;
 }
 
-void ScalarMultiplyQuaternion(Quaternion *q, float scalar) {
+void scalarMultiplyQuaternion(Quaternion *q, float scalar) {
     q->q0 *= scalar;
     q->q1 *= scalar;
     q->q2 *= scalar;
     q->q3 *= scalar;
 }
 
-Quaternion MultiplyQuaternions(Quaternion q, Quaternion p) {
+Quaternion multiplyQuaternions(Quaternion q, Quaternion p) {
 
     Quaternion r = {
         ((q.q0 * p.q0) - (q.q1 * p.q1) - (q.q2 * p.q2) - (q.q3 * p.q3)),
@@ -43,22 +43,22 @@ Quaternion MultiplyQuaternions(Quaternion q, Quaternion p) {
     return r;
 }
 
-Quaternion DivideQuaternions(Quaternion q, Quaternion p) {
+Quaternion divideQuaternions(Quaternion q, Quaternion p) {
 
-    return MultiplyQuaternions(q, Get_QuaternionInverse(p));
+    return multiplyQuaternions(q, getQuaternionInverse(p));
 }
 
-void Rotate_Vector(float *vector, Quaternion q) {
+void rotateVector(float *vector, Quaternion q) {
 
     Quaternion P = { vector[0], vector[1], vector[2], vector[3] };
-    Quaternion res = MultiplyQuaternions(MultiplyQuaternions(q, P), Get_QuaternionConjugate(q));
+    Quaternion res = multiplyQuaternions(multiplyQuaternions(q, P), getQuaternionConjugate(q));
     vector[0] = res.q0;
     vector[1] = res.q1;
     vector[2] = res.q2;
     vector[3] = res.q3;
 }
 
-void RotateByAngle(Quaternion *q, float angle) {
+void rotateByAngle(Quaternion *q, float angle) {
 
     float sinCalculation = sin( (angle / 2) * DEGREE_TO_RAD);
     q->q0 = cos((angle / 2) * DEGREE_TO_RAD);
@@ -68,9 +68,9 @@ void RotateByAngle(Quaternion *q, float angle) {
 }
 
 
-void NormalizeQuaternion(Quaternion *q) {
+void normalizeQuaternion(Quaternion *q) {
 
-    float error = 1 - Get_QuaternionLength(*q);
+    float error = 1 - getQuaternionLength(*q);
     float denominator = sqrt((1 - error));
     q->q0 /= denominator;
     q->q1 /= denominator;
@@ -79,15 +79,15 @@ void NormalizeQuaternion(Quaternion *q) {
 
 }
 
-float Get_QuaternionLength(Quaternion q) {
+float getQuaternionLength(Quaternion q) {
     
     return sqrt( (q.q0 * q.q0) + (q.q1 * q.q1) + (q.q2 * q.q2) + (q.q3 * q.q3) );
 }
 
-Quaternion Get_QuaternionInverse(Quaternion q) {
+Quaternion getQuaternionInverse(Quaternion q) {
 
-    Quaternion r = Get_QuaternionConjugate(q);
-    float length = Get_QuaternionLength(q);
+    Quaternion r = getQuaternionConjugate(q);
+    float length = getQuaternionLength(q);
     r.q0 /= length;
     r.q1 /= length;
     r.q2 /= length;
@@ -96,7 +96,7 @@ Quaternion Get_QuaternionInverse(Quaternion q) {
     return r;
 }
 
-Quaternion Get_QuaternionConjugate(Quaternion q) {
+Quaternion getQuaternionConjugate(Quaternion q) {
 
     Quaternion r = {
         q.q0,

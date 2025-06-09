@@ -11,12 +11,11 @@ static void update_imu_velocities();
 // void encoder_update_isr(uint pin_no, uint32_t event_flags);
 static float complementary_filter(float gyro_old, float gyro_new, float accel);
 static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel);
-static update_array(float32_t arr[], float32_t val, int array_size, int idx);
+static void update_array(float32_t arr[], float32_t val, int array_size, int idx);
 static float median_filter(float32_t vals[], float32_t val);
 
 void distance_request_isr();
 void pwm_receive_isr();
-
 void timer_callback(TimerHandle_t xTimer);
 void linear_accel_timer_callback(TimerHandle_t xLinearAccelTimer);
 
@@ -207,7 +206,7 @@ void vPWMOutTask(void *pvParameters) {
 
 
 
-void start_tasks() {
+void startTasks() {
 
     global_orientation.q0 = 1;
     global_orientation.q1 = 0;
@@ -411,7 +410,7 @@ static void update_imu_velocities() {
     static volatile int accels_count = 0;
 
     // Update Translational Vels
-    vector3f linear_acceleration = read_lin_accel();
+    vector3f linear_acceleration = readLinAccel();
 
     if (accels_count < BLOCK_SIZE)
         accels_count++;
@@ -423,14 +422,14 @@ static void update_imu_velocities() {
     // else if (linear_acceleration.y > -1 && linear_acceleration.y < 0) { linear_acceleration.y = ceil(linear_acceleration.y); }
 
     // Update Rotational Vels
-    vector3f rotational_velocity = read_rot_vel();
+    vector3f rotational_velocity = readRotVel();
     r_vels[0] = rotational_velocity.x;
     r_vels[1] = rotational_velocity.y;
 
     // Rotate Accelerations into Global Space
     update_global_orientation(rotational_velocity, linear_acceleration);
     float global_acceleration[4] = {1, linear_acceleration.x, linear_acceleration.y, linear_acceleration.z};
-    Rotate_Vector(global_acceleration, global_orientation);
+    rotateVector(global_acceleration, global_orientation);
 
     // Filter the Accelerations
     // update_array(accels_x_raw, global_acceleration[1], BLOCK_SIZE, accels_count);
@@ -458,18 +457,32 @@ static void update_imu_velocities() {
 // --------------------------------------------------------------------------------------
 
 static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel) {
+    
+    // static float x_rot_prev = 0;
+    // static float y_rot_prev = 0;
+    // static float z_rot_prev = 0;
+    // float x_rot = complementary_filter(x_rot_prev, rotational_velocity.x, linear_accel.x);
+    // float y_rot = complementary_filter(y_rot_prev, rotational_velocity.y, linear_accel.y);
+    // float z_rot = complementary_filter(z_rot_prev, rotational_velocity.z, linear_accel.z);
+    // x_rot_prev = x_rot;
+    // y_rot_prev = y_rot;
+    // z_rot_prev = z_rot;
+
+    // Convert Gyro Angles to Quaternion
     static Quaternion gyro_angles = {1, 0, 0, 0};
-    gyro_angles.q1 = complementary_filter(gyro_angles.q1, rotational_velocity.x, linear_accel.x);
-    gyro_angles.q2 = complementary_filter(gyro_angles.q2, rotational_velocity.y, linear_accel.y);
-    gyro_angles.q3 = complementary_filter(gyro_angles.q3, rotational_velocity.z, linear_accel.z);
+    float magnitude = sqrt((rotational_velocity.x * rotational_velocity.x) + 
+        (rotational_velocity.y * rotational_velocity.y) + (rotational_velocity.z * rotational_velocity.z));    
+    float magnitude_inv = 1 / magnitude;
+    vector3f axis_of_rot = { ((rotational_velocity.x * DT) * magnitude_inv), 
+        ((rotational_velocity.y * DT) * magnitude_inv), ((rotational_velocity.z * DT) * magnitude_inv)};
+
+    gyro_angles.q0 = cos(magnitude * 0.5);
+    gyro_angles.q1 = axis_of_rot.x * sin(magnitude * 0.5);
+    gyro_angles.q2 = axis_of_rot.y * sin(magnitude * 0.5);
+    gyro_angles.q3 = axis_of_rot.z * sin(magnitude * 0.5);
 
     // Update Global Orientation
-    Quaternion res = MultiplyQuaternions(global_orientation, gyro_angles);
-    ScalarMultiplyQuaternion(&res, 0.5);
-    ScalarMultiplyQuaternion(&res, DT);
-    global_orientation = AddQuaternions(global_orientation, res);
-    NormalizeQuaternion(&global_orientation);
-
+    global_orientation = multiplyQuaternions(gyro_angles, global_orientation);
 }
 
 static float complementary_filter(float gyro_old, float gyro_new, float accel) {
@@ -484,7 +497,7 @@ static void actuator_out(float left_duty_cycle_percent, float right_duty_cycle_p
 }
 // --------------------------------------------------------------------------------------
 
-static update_array(float32_t arr[], float32_t val, int array_size, int idx) {
+static void update_array(float32_t arr[], float32_t val, int array_size, int idx) {
 
     // Remove the oldest value
     if (idx > (array_size - 1)) {

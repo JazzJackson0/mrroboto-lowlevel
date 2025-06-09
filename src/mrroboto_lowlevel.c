@@ -10,7 +10,7 @@ int main(int argc, char *argv) {
     //     return -1;
     // }
 
-    start_tasks();
+    startTasks();
 
     while (1) {
         tight_loop_contents();

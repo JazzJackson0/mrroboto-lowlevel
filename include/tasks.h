@@ -68,7 +68,7 @@ A smaller POST_SHIFT keeps more precision, but risks overflow.
 #define GYRO_WEIGHT 0.98
 #define ACCEL_WEIGHT 1 - GYRO_WEIGHT
 
-void start_tasks();
+void startTasks();
 
 
 #endif

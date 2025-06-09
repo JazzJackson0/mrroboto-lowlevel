@@ -14,7 +14,7 @@ typedef struct q Quaternion;
  * @param p Right quaternion
  * @return Quaternion 
  */
-Quaternion AddQuaternions(Quaternion q, Quaternion p);
+Quaternion addQuaternions(Quaternion q, Quaternion p);
 /**
  * @brief Subtract two Quaternions
  * 
@@ -22,14 +22,14 @@ Quaternion AddQuaternions(Quaternion q, Quaternion p);
  * @param p Right quaternion
  * @return Quaternion 
  */
-Quaternion SubtractQuaternions(Quaternion q, Quaternion p);
+Quaternion subtractQuaternions(Quaternion q, Quaternion p);
 /**
  * @brief Multiply Quaternion by a scalar
  * 
  * @param q Quaternion
  * @param scalar Scalar
  */
-void ScalarMultiplyQuaternion(Quaternion *q, float scalar);
+void scalarMultiplyQuaternion(Quaternion *q, float scalar);
 /**
  * @brief Multiply two quaternions
  * 
@@ -37,7 +37,7 @@ void ScalarMultiplyQuaternion(Quaternion *q, float scalar);
  * @param p Right quaternion
  * @return ** Quaternion Quaternion Product
  */
-Quaternion MultiplyQuaternions(Quaternion q, Quaternion p);
+Quaternion multiplyQuaternions(Quaternion q, Quaternion p);
 /**
  * @brief Divide two quaternions
  * 
@@ -45,7 +45,7 @@ Quaternion MultiplyQuaternions(Quaternion q, Quaternion p);
  * @param p Right quaternion
  * @return ** Quaternion Quaternion Quotient
  */
-Quaternion DivideQuaternions(Quaternion q, Quaternion p);
+Quaternion divideQuaternions(Quaternion q, Quaternion p);
 /**
  * @brief Rotate a given vector around a given quaternion
  * 
@@ -53,7 +53,7 @@ Quaternion DivideQuaternions(Quaternion q, Quaternion p);
  * @param q Quaternion to rotate vector around.
  * @return ** Quaternion Resulting quaternion
  */
-void Rotate_Vector(float *vector, Quaternion q);
+void rotateVector(float *vector, Quaternion q);
 /**
  * @brief Rotate quaternion by given angle
  * 
@@ -61,34 +61,34 @@ void Rotate_Vector(float *vector, Quaternion q);
  * @param angle Angle of rotation
  * @return ** Quaternion Rotated quaternion.
  */
-void RotateByAngle(Quaternion *q, float angle);
+void rotateByAngle(Quaternion *q, float angle);
 /**
  * @brief Normalize quaternion
  * 
  * @param q Quaternion to normalize
  */
-void NormalizeQuaternion(Quaternion *q);
+void normalizeQuaternion(Quaternion *q);
 /**
  * @brief Get length of quaternion
  * 
  * @param q Quaternion to get length of
  * @return ** float Quaternion length
  */
-float Get_QuaternionLength(Quaternion q);
+float getQuaternionLength(Quaternion q);
 /**
  * @brief Get inverse of quaternion
  * 
  * @param q Quaternion to invert
  * @return ** Quaternion Quaternion inverse
  */
-Quaternion Get_QuaternionInverse(Quaternion q);
+Quaternion getQuaternionInverse(Quaternion q);
 /**
  * @brief Get conjugate of quaternion
  * 
  * @param q Quaternion to congugate
  * @return ** Quaternion Quaternion conjugate
  */
-Quaternion Get_QuaternionConjugate(Quaternion q);
+Quaternion getQuaternionConjugate(Quaternion q);
 
 
 //Structs

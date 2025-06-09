@@ -2,7 +2,7 @@
 
 
 
-void imu_init() {
+void imuInit() {
     sleep_ms(1000); // Wait 650ms for the sensor to reset
     uint8_t id[1];
     uint8_t chip_id_addr = BNO055_CHIP_ID_ADDR;
@@ -51,7 +51,7 @@ void imu_init() {
 
 
 
-CALIB_STATUS read_calib_status() {
+CALIB_STATUS readCalibStatus() {
     CALIB_STATUS calib_status;
     uint8_t calib_stat[1];
     uint8_t calib_stat_reg = BNO055_CALIB_STAT_REG;
@@ -67,7 +67,7 @@ CALIB_STATUS read_calib_status() {
 }
 
 
-vector3f read_accel() {
+vector3f readAccel() {
     vector3f acceleration;
     uint8_t accel[6];
     uint8_t accel_reg = BNO055_ACCEL_DATA_X_LSB_REG;
@@ -88,7 +88,7 @@ vector3f read_accel() {
 }
 
 
-vector3f read_lin_accel() {
+vector3f readLinAccel() {
     vector3f linear_acceleration;
     uint8_t accel[6];
     uint8_t lin_accel_reg = BNO055_LINEAR_ACCEL_DATA_X_LSB_REG;
@@ -109,7 +109,7 @@ vector3f read_lin_accel() {
     return linear_acceleration;
 }
 
-vector3f read_rot_vel() {
+vector3f readRotVel() {
     vector3f rotational_vel; // radians
     uint8_t rot_vel[6];
     uint8_t rot_vel_reg = BNO055_GYR_DATA_X_LSB_REG;
@@ -135,7 +135,7 @@ vector3f read_rot_vel() {
     return rotational_vel;
 }
 
-quaternion read_abs_quaternion() {
+quaternion readAbsQuaternion() {
     quaternion abs_quaternion;
     uint8_t quat[8];
     uint8_t quat_reg = BNO055_QUATERNION_DATA_W_LSB_REG;
@@ -157,7 +157,7 @@ quaternion read_abs_quaternion() {
     return abs_quaternion;
 }
 
-vector3f read_euler_angles() {
+vector3f readEulerAngles() {
     vector3f euler_angles;
     uint8_t euler[6];
     uint8_t euler_reg = BNO055_EULER_H_LSB_REG;
