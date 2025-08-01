@@ -1,12 +1,10 @@
 #include "../include/tasks.h"
 
-static void init_encoder_r(float _distance_per_tick, float _ticks_per_rotation);
-static void init_encoder_l(float _distance_per_tick, float _ticks_per_rotation);
-static void encoder_update_r();
-static void encoder_update_l();
-static float get_distance_r();
-static float get_distance_l();
-static void actuator_out(float left_duty_cycle_percent, float right_duty_cycle_percent);
+static void init_encoder(uint8_t wheel, float _distance_per_tick, float _ticks_per_rotation);
+static void encoder_update(uint8_t wheel);
+static float get_distance(uint8_t wheel);
+static void speed_out(float left_duty_cycle_percent, float right_duty_cycle_percent);
+static void direction_out(uint8_t direction);
 static void update_imu_velocities();
 // void encoder_update_isr(uint pin_no, uint32_t event_flags);
 static float complementary_filter(float gyro_old, float gyro_new, float accel);
@@ -61,6 +59,8 @@ volatile float prev_pos[2];
 volatile float t_vels[2];
 volatile float r_vels[2];
 
+volatile uint8_t motor_packet_type = 0;
+volatile uint8_t direction = 0;
 
 float filtered_accels_x[MEDIAN_FILTER_SIZE] = {0};
 float filtered_accels_y[MEDIAN_FILTER_SIZE] = {0};
@@ -82,21 +82,30 @@ bool filter = false;
 
 Quaternion global_orientation;
 
-
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 // void vEncoderUpdateTask(void *pvParameters) {
 
 //     for (;;) {
 //         // uint32_t ulNotificationValue;
 //         // ulNotificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 //         if (pin_triggered == ENCODER_R_INT_PIN) {
-//             encoder_update_r();
+//             encoder_update(RIGHT);
 //         }
 //         else {
-//             encoder_update_l();
+//             encoder_update(LEFT);
 //         }
 //     }
 // }
 
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 // void vSendEncoderDistanceDataTask(void *pvParameters) {
 
 //     for (;;) {
@@ -113,7 +122,11 @@ Quaternion global_orientation;
 // }
 
 
-
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 void vUpdateIMUDistanceDataTask(void *pvParameters) {
 
     for (;;) {
@@ -123,6 +136,11 @@ void vUpdateIMUDistanceDataTask(void *pvParameters) {
     }
 }
 
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 void vSendIMUDistanceDataTask(void *pvParameters) {
 
     for (;;) {
@@ -142,6 +160,11 @@ void vSendIMUDistanceDataTask(void *pvParameters) {
     }
 }
 
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 void vReceivePWMDataTask(void *pvParameters) {
 
     for (;;) {
@@ -154,33 +177,71 @@ void vReceivePWMDataTask(void *pvParameters) {
         // }
 
         uart_read_blocking(UART_ID, pwm_buffer, PWM_BUFFER_SIZE);
+        motor_packet_type = pwm_buffer[0];
+        uint32_t max_period = 10000;
 
-        // Test
-        printf("%d, %d, %d, %d, %d, %d, %d, %d\n", pwm_buffer[0], pwm_buffer[1], pwm_buffer[2], 
-                    pwm_buffer[3], pwm_buffer[4], pwm_buffer[5], pwm_buffer[6], pwm_buffer[7]);
+        if (motor_packet_type == DIRECTION_PACKET) {
+            direction = pwm_buffer[1];
+        }
+
+        else if (motor_packet_type == SPEED_PACKET) {
+            left_duty_percent = (float) (((uint32_t)pwm_buffer[1]) / max_period);
+            right_duty_percent = (float) (((uint32_t)pwm_buffer[5]) / max_period);
+        }
+
+        else if (motor_packet_type == FULL_PACKET) {
+            direction = pwm_buffer[1];
+            left_duty_percent = (float) (((uint32_t)pwm_buffer[1]) / max_period);
+            right_duty_percent = (float) (((uint32_t)pwm_buffer[5]) / max_period);
+        }
+
+        else if (motor_packet_type == QUAD_PACKET) {
+        }
+
 
         // left_duty_percent = (float) (((uint32_t)pwm_buffer[0] << 24) 
         //     | ((uint32_t)pwm_buffer[1] << 16) | ((uint32_t)pwm_buffer[2] << 8) | ((uint32_t)pwm_buffer[3]));
         // right_duty_percent = (float) (((uint32_t)pwm_buffer[4] << 24) 
         //     | ((uint32_t)pwm_buffer[5] << 16) | ((uint32_t)pwm_buffer[6] << 8) | ((uint32_t)pwm_buffer[7]));
         
-        // // Test
-        // printf("PWM: " " left duty: %f" " right duty: %f\n", left_duty_percent, right_duty_percent);
         
-        
-        // xTaskNotify(pwm_out_handle, 0, eNoAction);
+        xTaskNotify(pwm_out_handle, 0, eNoAction);
     }
 }
 
+/**
+ * @brief
+ * @param pvParameters
+ * @return 
+ */
 void vPWMOutTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        actuator_out(left_duty_percent, right_duty_percent);
+        if (motor_packet_type == DIRECTION_PACKET) {
+            direction_out(direction);
+        }
+
+        else if (motor_packet_type == SPEED_PACKET) {
+            speed_out(left_duty_percent, right_duty_percent);
+        }
+        
+        else if (motor_packet_type == FULL_PACKET) { 
+            direction_out(direction);
+            speed_out(left_duty_percent, right_duty_percent);
+        }
+
+        else if (motor_packet_type == QUAD_PACKET) { 
+
+        }
     }
 }
 
-
+// /**
+//  * @brief
+//  * @param pvParameters
+//  * @return 
+//  */
 // void vUpdateIMUDataTask(void *pvParameters) {
 
 //     for (;;) {
@@ -205,7 +266,11 @@ void vPWMOutTask(void *pvParameters) {
 // }
 
 
-
+/**
+ * @brief
+ * @param 
+ * @return 
+ */
 void startTasks() {
 
     global_orientation.q0 = 1;
@@ -218,9 +283,9 @@ void startTasks() {
     arm_biquad_cascade_df1_init_q31(&filter_x, NUM_STAGES, coeffs, state_x, POST_SHIFT);
     arm_biquad_cascade_df1_init_q31(&filter_y, NUM_STAGES, coeffs, state_y, POST_SHIFT);
 
-    // PWM Setup
-    r_slice_num = pwm_setup(MOTOR_R_PIN);
-    l_slice_num = pwm_setup(MOTOR_L_PIN);
+    // PWM Motor Outpus Setup
+    r_slice_num = pwmSetup(MOTOR_R_PIN);
+    l_slice_num = pwmSetup(MOTOR_L_PIN);
 
     // Setup UART for PWM comms from Microprocessor
     uart_init(UART_ID, UART_BAUD);
@@ -236,12 +301,24 @@ void startTasks() {
     // Encoder Setup
     gpio_init(ENCODER_R_INT_PIN);
     gpio_pull_up(ENCODER_R_INT_PIN);
-    init_encoder_r(0.001, 40);
+    init_encoder(RIGHT, 0.001, 40);
     gpio_init(ENCODER_L_INT_PIN);
     gpio_pull_up(ENCODER_L_INT_PIN);
-    init_encoder_l(0.001, 40);
+    init_encoder(LEFT, 0.001, 40);
     // gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
     // gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
+
+    // Setup Motor Direction Pins
+    // Right Motor 
+    gpio_init(MOTOR_R_DIR_1_PIN);
+    gpio_init(MOTOR_R_DIR_2_PIN);
+    gpio_put(MOTOR_R_DIR_1_PIN, HIGH);
+    gpio_put(MOTOR_R_DIR_2_PIN, LOW);
+    // Left Motor
+    gpio_init(MOTOR_L_DIR_1_PIN);
+    gpio_init(MOTOR_L_DIR_2_PIN);
+    gpio_put(MOTOR_L_DIR_1_PIN, HIGH);
+    gpio_put(MOTOR_L_DIR_2_PIN, LOW);
 
     // Setup I2C1 Bus for the coms with microprocessor
     i2c_init(i2c1, STANDARD_MODE);
@@ -261,7 +338,7 @@ void startTasks() {
     gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
     gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
-    imu_init();
+    imuInit();
 
     TimerHandle_t xTimer = xTimerCreate("IMU Timer", pdMS_TO_TICKS(10) /*10ms to 10 ticks*/, pdTRUE, (void *)0, timer_callback);
     
@@ -282,6 +359,11 @@ void startTasks() {
 }
 
 // ISRs----------------------------------------------------------------------------------
+/**
+ * @brief ISR for 
+ * @param 
+ * @return 
+ */
 // void encoder_update_isr(uint pin_no, uint32_t event_flags) {
 //     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 //     pin_triggered = pin_no;
@@ -290,7 +372,11 @@ void startTasks() {
 // }
 
 
-
+/**
+ * @brief ISR for 
+ * @param 
+ * @return 
+ */
 void distance_request_isr() {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -309,6 +395,11 @@ void distance_request_isr() {
     }
 }
 
+/**
+ * @brief ISR for 
+ * @param 
+ * @return 
+ */
 void pwm_receive_isr() {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -329,6 +420,11 @@ void pwm_receive_isr() {
 
 
 // Timers----------------------------------------------------------------------------------
+/**
+ * @brief
+ * @param xTimer
+ * @return 
+ */
 void timer_callback(TimerHandle_t xTimer) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     vTaskNotifyGiveFromISR(imu_dist_read_task_handle, &xHigherPriorityTaskWoken);
@@ -338,63 +434,86 @@ void timer_callback(TimerHandle_t xTimer) {
 
 
 // Encoder Data---------------------------------------------------------------------------------
-static void encoder_update_r() {
-    
-    tick_count_r++;
-    total_tick_count_r++;
+/**
+ * @brief Initialize encoder for given wheel
+ * @param wheel
+ * @param _distance_per_tick
+ * @param _ticks_per_rotation
+ * @return 
+ */
+static void init_encoder(uint8_t wheel, float _distance_per_tick, float _ticks_per_rotation) {
 
-    if (tick_count_r == ticks_per_rotation_r) {
-        rotation_count_r++;
-        tick_count_r = 0;
+    if (wheel == LEFT) {
+        global_total_tick_count_l = 0;
+        total_tick_count_l = 0;
+        tick_count_l = 0; 
+        rotation_count_l = 0;
+        ticks_per_rotation_l = _ticks_per_rotation;
+        distance_per_tick_l = _distance_per_tick;
+    }
+    else if (wheel == RIGHT) {
+        global_total_tick_count_r = 0;
+        total_tick_count_r = 0;
+        tick_count_r = 0; 
+        global_total_tick_count_l = 0;
     }
 }
 
-static void encoder_update_l() {
-    
-    tick_count_l++;
-    total_tick_count_l++;
+/**
+ * @brief Update encoder measurements from given wheel
+ * @param wheel
+ * @return 
+ */
+static void encoder_update(uint8_t wheel) {
+    if (wheel == LEFT) {
+        tick_count_l++;
+        total_tick_count_l++;
 
-    if (tick_count_l == ticks_per_rotation_l) {
-        rotation_count_l++;
-        tick_count_l = 0;
+        if (tick_count_l == ticks_per_rotation_l) {
+            rotation_count_l++;
+            tick_count_l = 0;
+        }
+    }
+    else if (wheel == RIGHT) {
+        tick_count_r++;
+        total_tick_count_r++;
+
+        if (tick_count_r == ticks_per_rotation_r) {
+            rotation_count_r++;
+            tick_count_r = 0;
+        }
     }
 }
 
-static void init_encoder_r(float _distance_per_tick, float _ticks_per_rotation) {
-
-    global_total_tick_count_r = 0;
-    total_tick_count_r = 0;
-    tick_count_r = 0; 
-    global_total_tick_count_l = 0;
+/**
+ * @brief Calculate distance travelled by given wheel
+ * @param wheel
+ * @return 
+ */
+static float get_distance(uint8_t wheel) {
+    if (wheel == LEFT) {
+        float ticks_during_time_period = total_tick_count_l - global_total_tick_count_l;
+        global_total_tick_count_l = total_tick_count_l;
+        return ticks_during_time_period * distance_per_tick_l;
+    }
+    else if (wheel == RIGHT) {
+        float ticks_during_time_period = total_tick_count_r - global_total_tick_count_r;
+        global_total_tick_count_r = total_tick_count_r;
+        return ticks_during_time_period * distance_per_tick_r;
+    }
+    
 }
 
-static void init_encoder_l(float _distance_per_tick, float _ticks_per_rotation) {
 
-    global_total_tick_count_l = 0;
-    total_tick_count_l = 0;
-    tick_count_l = 0; 
-    rotation_count_l = 0;
-    ticks_per_rotation_l = _ticks_per_rotation;
-    distance_per_tick_l = _distance_per_tick;
-}
-
-static float get_distance_r() {
-
-    float ticks_during_time_period = total_tick_count_r - global_total_tick_count_r;
-    global_total_tick_count_r = total_tick_count_r;
-    return ticks_during_time_period * distance_per_tick_r;
-}
-
-static float get_distance_l() {
-
-    float ticks_during_time_period = total_tick_count_l - global_total_tick_count_l;
-    global_total_tick_count_l = total_tick_count_l;
-    return ticks_during_time_period * distance_per_tick_l;
-}
 //------------------------------------------------------------------------------------------------------
 
 
 // IMU Data----------------------------------------------------------------------------------
+/**
+ * @brief
+ * @param 
+ * @return 
+ */
 static void update_imu_velocities() {
 
     static volatile float32_t accels_x_raw[BLOCK_SIZE] = {0};
@@ -455,7 +574,12 @@ static void update_imu_velocities() {
 
 }
 // --------------------------------------------------------------------------------------
-
+/**
+ * @brief 
+ * @param rotational_velocity
+ * @param linear_accel
+ * @return 
+ */
 static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel) {
     
     // static float x_rot_prev = 0;
@@ -485,18 +609,51 @@ static void update_global_orientation(vector3f rotational_velocity, vector3f lin
     global_orientation = multiplyQuaternions(gyro_angles, global_orientation);
 }
 
+/**
+ * @brief Run complementary filter
+ * @param gyro_old
+ * @param gyro_new
+ * @param accel
+ * @return 
+ */
 static float complementary_filter(float gyro_old, float gyro_new, float accel) {
     return (GYRO_WEIGHT * (gyro_old + (gyro_new * DT))) + (ACCEL_WEIGHT * accel);
 }
 
 // Actuator----------------------------------------------------------------------------------
-static void actuator_out(float left_duty_cycle_percent, float right_duty_cycle_percent) {
+/**
+ * @brief Update motor PWM speed values
+ * @param left_duty_cycle_percent
+ * @param right_duty_cycle_percent
+ * @return 
+ */
+static void speed_out(float left_duty_cycle_percent, float right_duty_cycle_percent) {
     
-    pwm_update_duty_cycle(r_slice_num, right_duty_cycle_percent);
-    pwm_update_duty_cycle(l_slice_num, left_duty_cycle_percent);
+    pwmUpdateDutyCycle(r_slice_num, right_duty_cycle_percent);
+    pwmUpdateDutyCycle(l_slice_num, left_duty_cycle_percent);
+}
+
+/**
+ * @brief Update motor direction pins
+ * @param direction packet of direction values
+ * @return 
+ */
+static void direction_out(uint8_t direction) {
+    uint8_t mask = 1;
+    gpio_put(MOTOR_L_DIR_1_PIN, (direction >> 3) & mask);
+    gpio_put(MOTOR_L_DIR_2_PIN, (direction >> 2) & mask);
+    gpio_put(MOTOR_R_DIR_1_PIN, (direction >> 1) & mask);
+    gpio_put(MOTOR_R_DIR_2_PIN, direction & mask);
 }
 // --------------------------------------------------------------------------------------
-
+/**
+ * @brief
+ * @param arr
+ * @param val
+ * @param array_size
+ * @param idx
+ * @return 
+ */
 static void update_array(float32_t arr[], float32_t val, int array_size, int idx) {
 
     // Remove the oldest value
@@ -509,6 +666,12 @@ static void update_array(float32_t arr[], float32_t val, int array_size, int idx
     arr[idx] = val;
 }
 
+/**
+ * @brief
+ * @param vals
+ * @param val
+ * @return 
+ */
 static float median_filter(float32_t vals[], float32_t val) {
     // float32_t vals[BLOCK_SIZE];
     // memcpy(vals, arr, BLOCK_SIZE * sizeof(float32_t));
