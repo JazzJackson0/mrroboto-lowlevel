@@ -21,6 +21,12 @@
 #include "../CMSIS-DSP-main/Include/arm_math.h"
 // #include "math_helper.h"
 
+#define HIGH 1
+#define LOW 0
+
+#define RIGHT 1
+#define LEFT 2
+
 #define DATA_RATE_HZ 100
 #define FAST_MODE 400000 // 400 Kbps
 #define STANDARD_MODE 100000 // 100 Kbps
@@ -34,7 +40,11 @@
 #define ENCODER_L_INT_PIN 18 // GP18
 
 #define MOTOR_R_PIN 12 // GP12
+#define MOTOR_R_DIR_1_PIN 14 // GP14
+#define MOTOR_R_DIR_2_PIN 15 // GP15
 #define MOTOR_L_PIN  19 // GP19 
+#define MOTOR_L_DIR_1_PIN 16 // GP16
+#define MOTOR_L_DIR_2_PIN 17 // GP17
 
 #define UART_ID uart1
 #define UART_TX_GPIO 8
@@ -67,6 +77,14 @@ A smaller POST_SHIFT keeps more precision, but risks overflow.
 // Complementary Filter Weights
 #define GYRO_WEIGHT 0.98
 #define ACCEL_WEIGHT 1 - GYRO_WEIGHT
+
+// Full Packet Format: [Type (1 Byte), Direction (1 Byte), Speed (4 Bytes), Speed (4 Bytes)]
+// Direction: [LEFT | RIGHT]
+#define DIRECTION_PACKET 2
+#define SPEED_PACKET 9
+#define FULL_PACKET 10
+#define QUAD_PACKET 17
+
 
 void startTasks();
 
