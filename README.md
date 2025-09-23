@@ -12,8 +12,8 @@ Pins:
     + uart rx: GP9 (12)
 
     Encoder IN [From Sensor]
-    + left encoder pin: GP18 (24)
-    + right encoder pin: GP13 (17)
+    + left encoder pins: GP18 (24), GP19 (25)
+    + right encoder pins: GP13 (17), GP12 (16)
     
     IMU IN [From Sensor]
     + i2c1 sda: GP4 (6)
@@ -27,8 +27,8 @@ Pins:
     + i2c1 scl: GP27 (32)
 
     PWM OUT [To Motor]
-    + left motor pin: GP19 (25)
-    + right motor pin: GP12 (16)
+    + left motor pin: GP20 (26)
+    + right motor pin: GP11 (15)
     
     Motor Direction Pins
     Left Motor Dir Pins: GP16, GP17
