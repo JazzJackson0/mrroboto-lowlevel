@@ -26,6 +26,8 @@
 
 #define RIGHT 1
 #define LEFT 2
+#define WHEEL_FWD 1
+#define WHEEL_BKWD -1
 
 #define DATA_RATE_HZ 100
 #define FAST_MODE 400000 // 400 Kbps
@@ -36,13 +38,17 @@
 #define I2C_SCL_PIN 27 // GP27 (GPIO PIN # 32)
 #define I2C_CLK_RATE 100000 // 100 KHz
 
-#define ENCODER_R_INT_PIN 13 // GP13
-#define ENCODER_L_INT_PIN 18 // GP18
+#define ENCODER_R_INT_PIN_A 13 // GP13
+#define ENCODER_R_INT_PIN_B 12 // GP12
+#define ENCODER_L_INT_PIN_A 18 // GP18
+#define ENCODER_L_INT_PIN_B 19 // GP19
+#define DISTANCE_PER_TICK 0
+#define TICKS_PER_ROTATION 0
 
-#define MOTOR_R_PIN 12 // GP12
+#define MOTOR_R_PIN 11 // GP11
 #define MOTOR_R_DIR_1_PIN 14 // GP14
 #define MOTOR_R_DIR_2_PIN 15 // GP15
-#define MOTOR_L_PIN  19 // GP19 
+#define MOTOR_L_PIN  20 // GP20
 #define MOTOR_L_DIR_1_PIN 16 // GP16
 #define MOTOR_L_DIR_2_PIN 17 // GP17
 
@@ -84,6 +90,18 @@ A smaller POST_SHIFT keeps more precision, but risks overflow.
 #define SPEED_PACKET 9
 #define FULL_PACKET 10
 #define QUAD_PACKET 17
+
+
+struct encoder_data {
+    const int ticks_per_rotation;
+    const int distance_per_rotation;
+
+    volatile int fwd_tick_count_r;
+    volatile int bkwd_tick_count_r;
+    
+    volatile int fwd_tick_count_l;
+    volatile int bkwd_tick_count_l;
+};
 
 
 void startTasks();

@@ -1,17 +1,17 @@
 #include "../include/tasks.h"
 
-static void init_encoder(uint8_t wheel, float _distance_per_tick, float _ticks_per_rotation);
-static void encoder_update(uint8_t wheel);
+static void init_encoder(struct encoder_data encoders, float _ticks_per_rotation, float _distance_per_rotation);
+static void encoder_update(uint8_t wheel, uint8_t wheel_direction);
 static float get_distance(uint8_t wheel);
 static void speed_out(float left_duty_cycle_percent, float right_duty_cycle_percent);
 static void direction_out(uint8_t direction);
 static void update_imu_velocities();
-// void encoder_update_isr(uint pin_no, uint32_t event_flags);
 static float complementary_filter(float gyro_old, float gyro_new, float accel);
 static void update_global_orientation(vector3f rotational_velocity, vector3f linear_accel);
 static void update_array(float32_t arr[], float32_t val, int array_size, int idx);
 static float median_filter(float32_t vals[], float32_t val);
 
+// void encoder_update_isr(uint pin_no, uint32_t event_flags);
 void distance_request_isr();
 void pwm_receive_isr();
 void timer_callback(TimerHandle_t xTimer);
@@ -28,31 +28,20 @@ void vPWMOutTask(void *pvParameters);
 
 TaskHandle_t xTaskHandle = NULL;
 TaskHandle_t encoder_dist_read_task_handle = NULL;
-TaskHandle_t imu_dist_read_task_handle = NULL;
-TaskHandle_t imu_dist_send_task_handle = NULL;
+TaskHandle_t imu_vel_read_task_handle = NULL;
+TaskHandle_t imu_vel_send_task_handle = NULL;
 TaskHandle_t pwm_read_task_handle = NULL;
 TaskHandle_t imu_timer_task_handle = NULL;
 TaskHandle_t pwm_out_handle = NULL;
 TaskHandle_t linear_accel_task_handle = NULL;
 
-static volatile int global_total_tick_count_r;
-static volatile int total_tick_count_r;
-static volatile int tick_count_r;
-static volatile int ticks_per_rotation_r;
-static volatile int rotation_count_r;
-static volatile int distance_per_tick_r;
-static volatile int global_total_tick_count_l;
-static volatile int total_tick_count_l;
-static volatile int tick_count_l;
-static volatile int ticks_per_rotation_l;
-static volatile int rotation_count_l;
-static volatile int distance_per_tick_l;
+struct encoder_data encoders;
 
 volatile float left_duty_percent = 0;
 volatile float right_duty_percent = 0;
 
-volatile float32_t integral_xs[BLOCK_SIZE] = {0};
-volatile float32_t integral_ys[BLOCK_SIZE] = {0};
+volatile float32_t integral_xs[block_size] = {0};
+volatile float32_t integral_ys[block_size] = {0};
 volatile int integral_count = 0;
 
 volatile float prev_pos[2];
@@ -90,13 +79,18 @@ Quaternion global_orientation;
 // void vEncoderUpdateTask(void *pvParameters) {
 
 //     for (;;) {
-//         // uint32_t ulNotificationValue;
-//         // ulNotificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//         if (pin_triggered == ENCODER_R_INT_PIN) {
-//             encoder_update(RIGHT);
+//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//         if (pin_triggered == ENCODER_R_INT_PIN_A && gpio_get(ENCODER_R_INT_PIN_B)) {
+//             encoder_update(RIGHT, WHEEL_FWD);
 //         }
-//         else {
-//             encoder_update(LEFT);
+//         else if (pin_triggered == ENCODER_R_INT_PIN_A && !gpio_get(ENCODER_R_INT_PIN_B)) {
+//             encoder_update(RIGHT, WHEEL_BKWD);
+//         }
+//         else if (pin_triggered == ENCODER_L_INT_PIN_A && gpio_get(ENCODER_L_INT_PIN_B)) {
+//             encoder_update(LEFT, WHEEL_FWD);
+//         }
+//         else if (pin_triggered == ENCODER_L_INT_PIN_B && !gpio_get(ENCODER_L_INT_PIN_B)) {
+//             encoder_update(LEFT, WHEEL_BKWD);
 //         }
 //     }
 // }
@@ -113,9 +107,19 @@ Quaternion global_orientation;
 
 //         // Master wants distance data
 //         if (i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS) {
+//             uint8_t MASK = 0xFF;
 //             uint8_t dist_per_wheel_buffer[DIST_BUFFER_SIZE];
-//             dist_per_wheel_buffer[0] = (uint32_t) get_distance_l();
-//             dist_per_wheel_buffer[4] = (uint32_t) get_distance_r();
+//             uint32_t left_dist = (uint32_t) get_distance(LEFT);
+//             uint32_t right_dist = (uint32_t) get_distance(RIGHT);
+            
+//             dist_per_wheel_buffer[0] = (left_dist >> 24) & MASK;
+//             dist_per_wheel_buffer[1] = (left_dist >> 16) & MASK;
+//             dist_per_wheel_buffer[2] = (left_dist >> 8) & MASK;
+//             dist_per_wheel_buffer[3] = left_dist & MASK;
+//             dist_per_wheel_buffer[4] = (right_dist >> 24) & MASK;
+//             dist_per_wheel_buffer[5] = (right_dist >> 16) & MASK;
+//             dist_per_wheel_buffer[6] = (right_dist >> 8) & MASK;
+//             dist_per_wheel_buffer[7] = right_dist & MASK;
 //             i2c_write_raw_blocking(i2c1, dist_per_wheel_buffer, DIST_BUFFER_SIZE);
 //         }
 //     }
@@ -123,11 +127,11 @@ Quaternion global_orientation;
 
 
 /**
- * @brief
+ * @brief Task: Updates IMU Velocity values
  * @param pvParameters
  * @return 
  */
-void vUpdateIMUDistanceDataTask(void *pvParameters) {
+void vUpdateIMUVelocitiesTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -137,16 +141,16 @@ void vUpdateIMUDistanceDataTask(void *pvParameters) {
 }
 
 /**
- * @brief
+ * @brief Task: Sends rotational and translational velocities over i2c.
  * @param pvParameters
  * @return 
  */
-void vSendIMUDistanceDataTask(void *pvParameters) {
+void vSendIMUVelocitiesTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // NOTE: ALL THESE PRINT STATEMENTS CAUSE DATA TRANSFER ISSUES (MAYBE STACK OVERFLOW OR DEADLOCK OVER TASKS ACCESSING PRINTF SERIAL BUS)
+        // NOTE: MULTIPLE PRINT STATEMENTS CAUSE DATA TRANSFER ISSUES (MAYBE STACK OVERFLOW OR DEADLOCK OVER TASKS ACCESSING PRINTF SERIAL BUS)
         uint8_t velocities_buffer[VEL_BUFFER_SIZE];
         memcpy(&velocities_buffer[0], r_vels, sizeof(r_vels));
         memcpy(&velocities_buffer[8], t_vels, sizeof(t_vels));
@@ -161,7 +165,7 @@ void vSendIMUDistanceDataTask(void *pvParameters) {
 }
 
 /**
- * @brief
+ * @brief Receives data packets (containing pwm info) over uart
  * @param pvParameters
  * @return 
  */
@@ -210,7 +214,7 @@ void vReceivePWMDataTask(void *pvParameters) {
 }
 
 /**
- * @brief
+ * @brief Task: Updates motor direction and speeds based on global parameters
  * @param pvParameters
  * @return 
  */
@@ -299,14 +303,17 @@ void startTasks() {
     irq_set_enabled(UART1_IRQ, true);
 
     // Encoder Setup
-    gpio_init(ENCODER_R_INT_PIN);
-    gpio_pull_up(ENCODER_R_INT_PIN);
-    init_encoder(RIGHT, 0.001, 40);
-    gpio_init(ENCODER_L_INT_PIN);
-    gpio_pull_up(ENCODER_L_INT_PIN);
-    init_encoder(LEFT, 0.001, 40);
-    // gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
-    // gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
+    gpio_init(ENCODER_R_INT_PIN_A);
+    gpio_init(ENCODER_R_INT_PIN_B);
+    gpio_pull_up(ENCODER_R_INT_PIN_A);
+    init_encoder(encoders, DISTANCE_PER_TICK TICKS_PER_ROTATION);
+    
+    gpio_init(ENCODER_L_INT_PIN_A);
+    gpio_init(ENCODER_L_INT_PIN_B);
+    gpio_pull_up(ENCODER_L_INT_PIN_A);
+    init_encoder(encoders, DISTANCE_PER_TICK TICKS_PER_ROTATION);
+    // gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN_A, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
+    // gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN_A, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
 
     // Setup Motor Direction Pins
     // Right Motor 
@@ -345,8 +352,8 @@ void startTasks() {
     // Setup Tasks
     // xTaskCreate(vEncoderUpdateTask, "Encoder Update Task", 256, NULL, 5, &xTaskHandle);
     // xTaskCreate(vSendEncoderDistanceDataTask, "Send Encoder Distance Data Task", 256, NULL, 3, &encoder_dist_read_task_handle);
-    xTaskCreate(vUpdateIMUDistanceDataTask, "Update IMU Distance Data Task", 256, NULL, 2, &imu_dist_read_task_handle);
-    xTaskCreate(vSendIMUDistanceDataTask, "Send IMU Distance Data Task", 256, NULL, 3, &imu_dist_send_task_handle);
+    xTaskCreate(vUpdateIMUVelocitiesDataTask, "Update IMU Velocities Data Task", 256, NULL, 2, &imu_vel_read_task_handle);
+    xTaskCreate(vSendIMUVelocitiesDataTask, "Send IMU Velocities Data Task", 256, NULL, 3, &imu_vel_send_task_handle);
     xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 2, &pwm_read_task_handle);
     xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 2, &pwm_out_handle);
     // xTaskCreate(vUpdateIMUDataTask, "Update IMU Data Task", 256, NULL, 1, &imu_timer_task_handle);
@@ -377,7 +384,7 @@ void startTasks() {
  * @param 
  * @return 
  */
-void distance_request_isr() {
+void velocities_request_isr() {
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint32_t status = i2c_get_hw(i2c1)->intr_stat;
@@ -385,12 +392,12 @@ void distance_request_isr() {
     // Master is reading from slave
     if (status & I2C_IC_INTR_STAT_R_RD_REQ_BITS) {
         (void)i2c_get_hw(i2c1)->clr_rd_req; // Clear interrupt
-        vTaskNotifyGiveFromISR(imu_dist_send_task_handle, &xHigherPriorityTaskWoken);
+        vTaskNotifyGiveFromISR(imu_vel_send_task_handle, &xHigherPriorityTaskWoken);
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 
     if (status & I2C_IC_INTR_STAT_R_TX_ABRT_BITS) {
-        printf("!!!!!!!!!!!!!!!ABORT!!!!!!!!!!!!!!!!!!!!!\n");
+        // printf("!!!!!!!!!!!!!!!ABORT!!!!!!!!!!!!!!!!!!!!!\n");
         (void)i2c_get_hw(i2c1)->clr_tx_abrt;
     }
 }
@@ -427,7 +434,7 @@ void pwm_receive_isr() {
  */
 void timer_callback(TimerHandle_t xTimer) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR(imu_dist_read_task_handle, &xHigherPriorityTaskWoken);
+    vTaskNotifyGiveFromISR(imu_vel_read_task_handle, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 //------------------------------------------------------------------------------------------------------
@@ -436,72 +443,58 @@ void timer_callback(TimerHandle_t xTimer) {
 // Encoder Data---------------------------------------------------------------------------------
 /**
  * @brief Initialize encoder for given wheel
- * @param wheel
+ * @param encoders
  * @param _distance_per_tick
  * @param _ticks_per_rotation
  * @return 
  */
-static void init_encoder(uint8_t wheel, float _distance_per_tick, float _ticks_per_rotation) {
+static void init_encoders(struct encoder_data encoders, float _ticks_per_rotation, float _distance_per_rotation) {
+    encoders.ticks_per_rotation = _ticks_per_rotation;
+    encoders.distance_per_rotation = _distance_per_rotation;
 
-    if (wheel == LEFT) {
-        global_total_tick_count_l = 0;
-        total_tick_count_l = 0;
-        tick_count_l = 0; 
-        rotation_count_l = 0;
-        ticks_per_rotation_l = _ticks_per_rotation;
-        distance_per_tick_l = _distance_per_tick;
-    }
-    else if (wheel == RIGHT) {
-        global_total_tick_count_r = 0;
-        total_tick_count_r = 0;
-        tick_count_r = 0; 
-        global_total_tick_count_l = 0;
-    }
+    encoders.fwd_tick_count_l = 0;
+    encoders.bkwd_tick_count_l = 0;
+    encoders.fwd_tick_count_r = 0;
+    encoders.bkwd_tick_count_r = 0;
 }
 
 /**
  * @brief Update encoder measurements from given wheel
  * @param wheel
+ * @param wheel_direction
  * @return 
  */
-static void encoder_update(uint8_t wheel) {
-    if (wheel == LEFT) {
-        tick_count_l++;
-        total_tick_count_l++;
-
-        if (tick_count_l == ticks_per_rotation_l) {
-            rotation_count_l++;
-            tick_count_l = 0;
-        }
+static void encoder_update(uint8_t wheel, uint8_t wheel_direction) {
+    
+    if (wheel == RIGHT && wheel_direction == WHEEL_FWD) {
+        encoders.fwd_tick_count_r++;
     }
-    else if (wheel == RIGHT) {
-        tick_count_r++;
-        total_tick_count_r++;
-
-        if (tick_count_r == ticks_per_rotation_r) {
-            rotation_count_r++;
-            tick_count_r = 0;
-        }
+    else if (wheel == RIGHT && wheel_direction == WHEEL_BKWD) {
+        encoders.bkwd_tick_count_r++;
+    }
+    else if (wheel == LEFT && wheel_direction == WHEEL_FWD) {
+        encoders.fwd_tick_count_l++;
+    }
+    else if (wheel == LEFT && wheel_direction == WHEEL_BKWD) {
+        encoders.bkwd_tick_count_l++;
     }
 }
 
 /**
- * @brief Calculate distance travelled by given wheel
+ * @brief Calculate distance traveled by given wheel
  * @param wheel
  * @return 
  */
 static float get_distance(uint8_t wheel) {
-    if (wheel == LEFT) {
-        float ticks_during_time_period = total_tick_count_l - global_total_tick_count_l;
-        global_total_tick_count_l = total_tick_count_l;
-        return ticks_during_time_period * distance_per_tick_l;
-    }
-    else if (wheel == RIGHT) {
-        float ticks_during_time_period = total_tick_count_r - global_total_tick_count_r;
-        global_total_tick_count_r = total_tick_count_r;
-        return ticks_during_time_period * distance_per_tick_r;
-    }
     
+    if (wheel == RIGHT) {
+        return encoders.distance_per_rotation 
+            * ((encoders.fwd_tick_count_r - encoders.bkwd_tick_count_r) / encoders.ticks_per_rotation);
+    }
+    else if (wheel == LEFT) {
+        return encoders.distance_per_rotation
+            * ((encoders.fwd_tick_count_l - encoders.bkwd_tick_count_l) / encoders.ticks_per_rotation);
+    }
 }
 
 
