@@ -93,8 +93,8 @@ A smaller POST_SHIFT keeps more precision, but risks overflow.
 
 
 struct encoder_data {
-    const int ticks_per_rotation;
-    const int distance_per_rotation;
+    int ticks_per_rotation;
+    int distance_per_rotation;
 
     volatile int fwd_tick_count_r;
     volatile int bkwd_tick_count_r;

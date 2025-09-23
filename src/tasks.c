@@ -1,6 +1,6 @@
 #include "../include/tasks.h"
 
-static void init_encoder(struct encoder_data encoders, float _ticks_per_rotation, float _distance_per_rotation);
+static void init_encoders(struct encoder_data encoders, float _ticks_per_rotation, float _distance_per_rotation);
 static void encoder_update(uint8_t wheel, uint8_t wheel_direction);
 static float get_distance(uint8_t wheel);
 static void speed_out(float left_duty_cycle_percent, float right_duty_cycle_percent);
@@ -12,15 +12,15 @@ static void update_array(float32_t arr[], float32_t val, int array_size, int idx
 static float median_filter(float32_t vals[], float32_t val);
 
 // void encoder_update_isr(uint pin_no, uint32_t event_flags);
-void distance_request_isr();
+void velocities_request_isr();
 void pwm_receive_isr();
 void timer_callback(TimerHandle_t xTimer);
 void linear_accel_timer_callback(TimerHandle_t xLinearAccelTimer);
 
 // void vEncoderUpdateTask(void *pvParameters);
 // void vSendEncoderDistanceDataTask(void *pvParameters);
-void vUpdateIMUDistanceDataTask(void *pvParameters); 
-void vSendIMUDistanceDataTask(void *pvParameters); 
+void vUpdateIMUVelocitiesTask(void *pvParameters); 
+void vSendIMUVelocitiesTask(void *pvParameters); 
 void vReceivePWMDataTask(void *pvParameters);
 void vPWMOutTask(void *pvParameters);
 // void vUpdateIMUDataTask(void *pvParameters);
@@ -40,8 +40,8 @@ struct encoder_data encoders;
 volatile float left_duty_percent = 0;
 volatile float right_duty_percent = 0;
 
-volatile float32_t integral_xs[block_size] = {0};
-volatile float32_t integral_ys[block_size] = {0};
+volatile float32_t integral_xs[BLOCK_SIZE] = {0};
+volatile float32_t integral_ys[BLOCK_SIZE] = {0};
 volatile int integral_count = 0;
 
 volatile float prev_pos[2];
@@ -306,12 +306,12 @@ void startTasks() {
     gpio_init(ENCODER_R_INT_PIN_A);
     gpio_init(ENCODER_R_INT_PIN_B);
     gpio_pull_up(ENCODER_R_INT_PIN_A);
-    init_encoder(encoders, DISTANCE_PER_TICK TICKS_PER_ROTATION);
+    init_encoders(encoders, DISTANCE_PER_TICK, TICKS_PER_ROTATION);
     
     gpio_init(ENCODER_L_INT_PIN_A);
     gpio_init(ENCODER_L_INT_PIN_B);
     gpio_pull_up(ENCODER_L_INT_PIN_A);
-    init_encoder(encoders, DISTANCE_PER_TICK TICKS_PER_ROTATION);
+    init_encoders(encoders, DISTANCE_PER_TICK, TICKS_PER_ROTATION);
     // gpio_set_irq_enabled_with_callback(ENCODER_R_INT_PIN_A, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
     // gpio_set_irq_enabled_with_callback(ENCODER_L_INT_PIN_A, GPIO_IRQ_LEVEL_LOW, true, &encoder_update_isr);
 
@@ -335,7 +335,7 @@ void startTasks() {
     gpio_pull_up(I2C_SDA_PIN);
     gpio_pull_up(I2C_SCL_PIN);
     i2c_get_hw(i2c1)->intr_mask = I2C_IC_INTR_MASK_M_RD_REQ_BITS | I2C_IC_INTR_MASK_M_TX_ABRT_BITS | I2C_IC_INTR_MASK_M_TX_OVER_BITS;
-    irq_set_exclusive_handler(I2C1_IRQ, distance_request_isr);
+    irq_set_exclusive_handler(I2C1_IRQ, velocities_request_isr);
     irq_set_enabled(I2C1_IRQ, true);
 
 
@@ -352,8 +352,8 @@ void startTasks() {
     // Setup Tasks
     // xTaskCreate(vEncoderUpdateTask, "Encoder Update Task", 256, NULL, 5, &xTaskHandle);
     // xTaskCreate(vSendEncoderDistanceDataTask, "Send Encoder Distance Data Task", 256, NULL, 3, &encoder_dist_read_task_handle);
-    xTaskCreate(vUpdateIMUVelocitiesDataTask, "Update IMU Velocities Data Task", 256, NULL, 2, &imu_vel_read_task_handle);
-    xTaskCreate(vSendIMUVelocitiesDataTask, "Send IMU Velocities Data Task", 256, NULL, 3, &imu_vel_send_task_handle);
+    xTaskCreate(vUpdateIMUVelocitiesTask, "Update IMU Velocities Task", 256, NULL, 2, &imu_vel_read_task_handle);
+    xTaskCreate(vSendIMUVelocitiesTask, "Send IMU Velocities Task", 256, NULL, 3, &imu_vel_send_task_handle);
     xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 2, &pwm_read_task_handle);
     xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 2, &pwm_out_handle);
     // xTaskCreate(vUpdateIMUDataTask, "Update IMU Data Task", 256, NULL, 1, &imu_timer_task_handle);
