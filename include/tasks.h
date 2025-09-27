@@ -12,9 +12,11 @@
 // For Pico W
 // #include "boards/pico_w.h"
 // #include "pico/cyw43_arch.h" // Required for initializing and using the Wi-Fi chip
-#include "pwm.h"
-#include "bno055.h"
+#include "pose_estimation.h"
 #include "Quaternions.h"
+#include "encoder.h"
+#include "motor.h"
+#include "imu.h"
 #include <FreeRTOS.h>
 #include <task.h>
 #include <timers.h>
@@ -24,34 +26,16 @@
 #define HIGH 1
 #define LOW 0
 
-#define RIGHT 1
-#define LEFT 2
-#define WHEEL_FWD 1
-#define WHEEL_BKWD -1
-
+// I2C Settings
 #define DATA_RATE_HZ 100
 #define FAST_MODE 400000 // 400 Kbps
 #define STANDARD_MODE 100000 // 100 Kbps
-
 #define I2C_SLAVE_ADDR 0x55 // Default Slave Address
 #define I2C_SDA_PIN 26 // GP26 (GPIO PIN #31)
 #define I2C_SCL_PIN 27 // GP27 (GPIO PIN # 32)
 #define I2C_CLK_RATE 100000 // 100 KHz
 
-#define ENCODER_R_INT_PIN_A 13 // GP13
-#define ENCODER_R_INT_PIN_B 12 // GP12
-#define ENCODER_L_INT_PIN_A 18 // GP18
-#define ENCODER_L_INT_PIN_B 19 // GP19
-#define DISTANCE_PER_TICK 0
-#define TICKS_PER_ROTATION 0
-
-#define MOTOR_R_PIN 11 // GP11
-#define MOTOR_R_DIR_1_PIN 14 // GP14
-#define MOTOR_R_DIR_2_PIN 15 // GP15
-#define MOTOR_L_PIN  20 // GP20
-#define MOTOR_L_DIR_1_PIN 16 // GP16
-#define MOTOR_L_DIR_2_PIN 17 // GP17
-
+// UART Settings
 #define UART_ID uart1
 #define UART_TX_GPIO 8
 #define UART_RX_GPIO 9
@@ -59,31 +43,7 @@
 #define DATA_BITS 8
 #define STOP_BITS 1
 
-#define DIST_BUFFER_SIZE 8
-#define VEL_BUFFER_SIZE 16
-#define PWM_BUFFER_SIZE 8
-
-#define NUM_STAGES 2 // (4th Order Filter / 2) = 2
-#define BLOCK_SIZE 25 // Number of samples processed per function call
-#define POST_SHIFT 5 /* Number of bits the output of each biquad filter stage is right-shifted to keep it within the valid Q31 range and avoid overflow.
-                        Low Value (0-1): keeps output close to full Q31 resolution. But the internal values may overflow, causing distortion or wraparound
-                        High Value (4+): reduces the risk of overflow. But you lose resolution (precision), and output amplitude becomes smaller.
-                    */
-#define NUM_COEFFS 12
-/*
-A larger POST_SHIFT reduces output magnitude, preventing overflow.
-A smaller POST_SHIFT keeps more precision, but risks overflow.
-*/
-
-#define FIXED_PT_CONVERSION 1000
-
-#define MEDIAN_FILTER_SIZE 11
-#define DT 0.01
-
-// Complementary Filter Weights
-#define GYRO_WEIGHT 0.98
-#define ACCEL_WEIGHT 1 - GYRO_WEIGHT
-
+// UART Data Packet Settings
 // Full Packet Format: [Type (1 Byte), Direction (1 Byte), Speed (4 Bytes), Speed (4 Bytes)]
 // Direction: [LEFT | RIGHT]
 #define DIRECTION_PACKET 2
@@ -91,18 +51,31 @@ A smaller POST_SHIFT keeps more precision, but risks overflow.
 #define FULL_PACKET 10
 #define QUAD_PACKET 17
 
+// Encoder Settings
+#define ENCODER_R_INT_PIN_A 13 // GP13
+#define ENCODER_R_INT_PIN_B 12 // GP12
+#define ENCODER_L_INT_PIN_A 18 // GP18
+#define ENCODER_L_INT_PIN_B 19 // GP19
+#define DISTANCE_PER_ROTATION 0
+#define TICKS_PER_ROTATION 0
 
-struct encoder_data {
-    int ticks_per_rotation;
-    int distance_per_rotation;
+// Motor Settings
+#define MOTOR_R_PIN 11 // GP11
+#define MOTOR_R_DIR_1_PIN 14 // GP14
+#define MOTOR_R_DIR_2_PIN 15 // GP15
+#define MOTOR_L_PIN  20 // GP20
+#define MOTOR_L_DIR_1_PIN 16 // GP16
+#define MOTOR_L_DIR_2_PIN 17 // GP17
 
-    volatile int fwd_tick_count_r;
-    volatile int bkwd_tick_count_r;
-    
-    volatile int fwd_tick_count_l;
-    volatile int bkwd_tick_count_l;
-};
+// ...
+#define TRACKWIDTH 5 // TODO: B.S number for now
 
+#define DIST_BUFFER_SIZE 8
+#define VEL_BUFFER_SIZE 16
+#define PWM_BUFFER_SIZE 8
+
+// ???
+#define DT 0.01 // TODO: B.S number for now
 
 void startTasks();
 
