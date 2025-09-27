@@ -41,6 +41,13 @@ add_executable(little_roboto
     src/pwm.c 
     src/bno055.c
     src/Quaternions.c
+    src/encoder.c
+    src/filters.c
+    src/imu.c
+    src/motor.c
+    src/pose_estimation.c
+    src/utils.c
+    src/Odometry2Wheel.c
 )
 
 target_include_directories(little_roboto PRIVATE
