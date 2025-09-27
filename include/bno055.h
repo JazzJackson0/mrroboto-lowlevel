@@ -62,7 +62,7 @@ typedef struct _CALIB_STATUS CALIB_STATUS;
  * @brief 
  * 
  */
-void imuInit();
+void initBno055();
 
 /**
  * @brief 
