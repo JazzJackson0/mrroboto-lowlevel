@@ -2,7 +2,7 @@
 
 
 
-void imuInit() {
+void initBno055() {
     sleep_ms(1000); // Wait 650ms for the sensor to reset
     uint8_t id[1];
     uint8_t chip_id_addr = BNO055_CHIP_ID_ADDR;
