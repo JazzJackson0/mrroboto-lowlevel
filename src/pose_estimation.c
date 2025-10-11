@@ -18,10 +18,12 @@ float32_t raw_coeffs[NUM_COEFFS] = {7.699098914706358e-09, 1.5398197571172107e-0
 
 
 void initPoseEstimation(int timestep) {
+    static arm_biquad_casd_df1_inst_q31 engine_x;
+    static arm_biquad_casd_df1_inst_q31 engine_y;
     dt = timestep;
     global_orientation = GLOBAL_QUATERNION_INIT;
-    accel_filter_x = buildIirFilter(POST_SHIFT, NUM_STAGES, BLOCK_SIZE, NUM_COEFFS, raw_coeffs);
-    accel_filter_y = buildIirFilter(POST_SHIFT, NUM_STAGES, BLOCK_SIZE, NUM_COEFFS, raw_coeffs);
+    accel_filter_x = buildIirFilter(&engine_x, POST_SHIFT, NUM_STAGES, BLOCK_SIZE, NUM_COEFFS, raw_coeffs);
+    accel_filter_y = buildIirFilter(&engine_y, POST_SHIFT, NUM_STAGES, BLOCK_SIZE, NUM_COEFFS, raw_coeffs);
 }
 
 void encoder_GetRobotVelocities(struct encoder_data * encoder_left, struct encoder_data * encoder_right, 
