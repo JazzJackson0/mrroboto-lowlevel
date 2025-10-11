@@ -33,6 +33,7 @@ struct filter {
 
 /**
  * @brief 
+ * @param arm_biquad_casd_df1_inst_q31 
  * @param post_shift
  * @param num_stages
  * @param block_size
@@ -40,7 +41,7 @@ struct filter {
  * @param raw_coeffs
  * 
  */
-struct filter * buildIirFilter(int post_shift, int num_stages, int block_size, int num_coeffs, float32_t * raw_coeffs);
+struct filter * buildIirFilter(arm_biquad_casd_df1_inst_q31 * engine, int post_shift, int num_stages, int block_size, int num_coeffs, float32_t * raw_coeffs);
 
 /**
  * @brief 

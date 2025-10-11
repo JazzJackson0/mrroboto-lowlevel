@@ -5,7 +5,9 @@ float filtered_accels_x[MEDIAN_FILTER_SIZE] = {0};
 float filtered_accels_y[MEDIAN_FILTER_SIZE] = {0};
 
 
-struct filter * buildIirFilter(int post_shift, int num_stages, int block_size, int num_coeffs, float32_t * raw_coeffs) {
+struct filter * buildIirFilter(arm_biquad_casd_df1_inst_q31 * engine, int post_shift, int num_stages, 
+        int block_size, int num_coeffs, float32_t * raw_coeffs) {
+
     struct filter *flt = (struct filter *) malloc(sizeof(struct filter));
     flt->coeffs = (q31_t *) calloc(num_coeffs, sizeof(q31_t));
     flt->intermediate_state = (q31_t *) calloc(2 * num_stages, sizeof(q31_t));
@@ -15,6 +17,7 @@ struct filter * buildIirFilter(int post_shift, int num_stages, int block_size, i
     flt->num_stages = num_stages;
     flt->block_size = block_size;
     flt->num_coeffs = num_coeffs;
+    flt->engine = engine;
 
     // Setup IIR Filter (q31 is optimized for M0+ processors)
     arm_float_to_q31(raw_coeffs, flt->coeffs, flt->num_coeffs);
