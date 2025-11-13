@@ -24,9 +24,10 @@ uint pwmSetup(int pin_num);
  * @brief 
  * 
  * @param slice_num 
+ * @param channel 
  * @param duty_cycle_percent Duty Cycle Percent from 0 - 1
  */
-void pwmUpdateDutyCycle(uint slice_num, float  duty_cycle_percent);
+void pwmUpdateDutyCycle(uint slice_num, uint8_t channel, float  duty_cycle_percent);
 
 /**
  * @brief 
