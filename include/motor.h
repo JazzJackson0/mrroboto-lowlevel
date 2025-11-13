@@ -18,11 +18,11 @@ struct motor_data {
 /**
  * @brief
  * @param motor
- * @param pin
+ * @param pwm_pin
  * @param dir_pin_1
  * @param dir_pin_2
  */
-void initMotor(struct motor_data * motor, uint8_t pin, uint8_t dir_pin_1, uint8_t dir_pin_2);
+void initMotor(struct motor_data * motor, uint8_t pwm_pin, uint8_t dir_pin_1, uint8_t dir_pin_2);
 
 /**
  * @brief Update motor PWM speed values
