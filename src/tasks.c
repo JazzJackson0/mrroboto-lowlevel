@@ -97,8 +97,6 @@ void vSendEncoderVelocitiesTask(void *pvParameters) {
             vels_buffer[6] = (translational_vel>> 8) & MASK;
             vels_buffer[7] = translational_vel & MASK;
             i2c_write_raw_blocking(i2c1, vels_buffer, DIST_BUFFER_SIZE);
-
-            
         }
     }
 }
@@ -157,15 +155,15 @@ void vReceivePWMDataTask(void *pvParameters) {
         }
 
         else if (motor_packet_type == SPEED_PACKET) {
-            left_motor.duty_cycle_percent = (float) (((uint32_t)pwm_buffer[1]) / max_period);
-            right_motor.duty_cycle_percent = (float) (((uint32_t)pwm_buffer[5]) / max_period);
+            memcpy(&left_motor.duty_cycle_percent, pwm_buffer[1], sizeof(float));
+            memcpy(&right_motor.duty_cycle_percent, pwm_buffer[5], sizeof(float));
         }
 
         else if (motor_packet_type == FULL_PACKET) {
             left_motor.direction = pwm_buffer[1];
             right_motor.direction = pwm_buffer[1];
-            left_motor.duty_cycle_percent = (float) (((uint32_t)pwm_buffer[2]) / max_period);
-            right_motor.duty_cycle_percent = (float) (((uint32_t)pwm_buffer[6]) / max_period);
+            memcpy(&left_motor.duty_cycle_percent, pwm_buffer[2], sizeof(float));
+            memcpy(&right_motor.duty_cycle_percent, pwm_buffer[6], sizeof(float));
         }
 
         else if (motor_packet_type == QUAD_PACKET) {
@@ -229,16 +227,40 @@ void startTasks() {
     // Setup Right Motor 
     gpio_init(MOTOR_R_DIR_1_PIN);
     gpio_init(MOTOR_R_DIR_2_PIN);
+    gpio_set_dir(MOTOR_R_DIR_1_PIN, GPIO_OUT);
+    gpio_set_dir(MOTOR_R_DIR_2_PIN, GPIO_OUT);
     gpio_put(MOTOR_R_DIR_1_PIN, HIGH);
     gpio_put(MOTOR_R_DIR_2_PIN, LOW);
     initMotor(&right_motor, MOTOR_R_PIN, MOTOR_R_DIR_1_PIN, MOTOR_R_DIR_2_PIN);
-
+    
     // Setup Left Motor
     gpio_init(MOTOR_L_DIR_1_PIN);
     gpio_init(MOTOR_L_DIR_2_PIN);
+    gpio_set_dir(MOTOR_L_DIR_1_PIN, GPIO_OUT);
+    gpio_set_dir(MOTOR_L_DIR_2_PIN, GPIO_OUT);
     gpio_put(MOTOR_L_DIR_1_PIN, HIGH);
     gpio_put(MOTOR_L_DIR_2_PIN, LOW);
     initMotor(&left_motor, MOTOR_L_PIN, MOTOR_L_DIR_1_PIN, MOTOR_L_DIR_2_PIN);
+
+    // // // Test Motor Output -------------------------------------------
+    // right_motor.duty_cycle_percent = 50;
+    // right_motor.direction_pin_1 = 1;
+    // right_motor.direction_pin_2 = 0;
+    // left_motor.duty_cycle_percent = 50;
+    // left_motor.direction_pin_1 = 1;
+    // left_motor.direction_pin_2 = 0;
+    // motorSpeedOut(&left_motor, &right_motor);
+    // // // End Test -----------------------------------------
+
+    // // TEST 2!!!!!!!!!!!!!!!!!!!!------------
+    // gpio_init(MOTOR_R_PIN);
+    // gpio_init(MOTOR_L_PIN);
+    // gpio_set_dir(MOTOR_R_PIN, GPIO_OUT);
+    // gpio_set_dir(MOTOR_L_PIN, GPIO_OUT);
+    // gpio_put(MOTOR_R_PIN, HIGH);
+    // gpio_put(MOTOR_L_PIN, HIGH);
+    // // End TEST ------------------------------
+
 
     // Setup Microprocessor PWM-Receiver Connection (UART)
     uart_init(UART_ID, UART_BAUD);
