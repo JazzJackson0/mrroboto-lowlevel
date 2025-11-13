@@ -10,19 +10,21 @@
 static float percentage_clamp(float percentage);
 
 
-uint pwmSetup(int pin_num) {
+struct pwm_model pwmSetup(int pin_num) {
 
+    struct pwm_model pwm;
     // Send pin_num into PWM mode
     gpio_set_function(pin_num, GPIO_FUNC_PWM);
     
-    // Get PWM channel for pin_num
-    uint slice_num = pwm_gpio_to_slice_num(pin_num);
+    // Get PWM slice & channel for pin_num
+    pwm.slice = pwm_gpio_to_slice_num(pin_num);
+    pwm.channel = pwm_gpio_to_channel(pin_num);
 
     // Configure PWM channel and set it running
-    pwm_set_wrap(slice_num, WRAP_VALUE);
-    pwm_set_enabled(slice_num, true);
+    pwm_set_wrap(pwm.slice, WRAP_VALUE);
+    pwm_set_enabled(pwm.slice, true);
 
-    return slice_num;
+    return pwm;
 }
 
 void pwmUpdateDutyCycle(uint slice_num, uint8_t channel, float duty_cycle_percent) {

@@ -16,9 +16,12 @@
 #define SERVO_MAX 13
 #define SERVO_RANGE (SERVO_MAX - SERVO_MIN)
 
+struct pwm_model {
+    uint slice;
+    uint channel;
+};
 
-
-uint pwmSetup(int pin_num);
+struct pwm_model pwmSetup(int pin_num);
 
 /**
  * @brief 

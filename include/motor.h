@@ -8,7 +8,7 @@
 
 
 struct motor_data {
-    uint slice_num;
+    struct pwm_model pwm;
     float duty_cycle_percent;
     int direction_pin_1;
     int direction_pin_2;
