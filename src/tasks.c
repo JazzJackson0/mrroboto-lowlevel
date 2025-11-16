@@ -138,32 +138,64 @@ void vReceivePWMDataTask(void *pvParameters) {
 
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        uint8_t pwm_buffer[PWM_BUFFER_SIZE];
+        uint8_t pwm_buffer[MAX_PWM_BUFFER_SIZE];
         // volatile size_t pwm_buff_idx = 0;
 
-        // while (pwm_buff_idx < PWM_BUFFER_SIZE) {
+        // while (pwm_buff_idx < MAX_PWM_BUFFER_SIZE) {
         //     pwm_buffer[pwm_buff_idx++] = uart_getc(UART_ID);
         // }
 
-        uart_read_blocking(UART_ID, pwm_buffer, PWM_BUFFER_SIZE);
+        uart_read_blocking(UART_ID, pwm_buffer, MAX_PWM_BUFFER_SIZE);
         motor_packet_type = pwm_buffer[0];
         uint32_t max_period = 10000;
 
         if (motor_packet_type == DIRECTION_PACKET) {
-            left_motor.direction = pwm_buffer[1];
-            right_motor.direction = pwm_buffer[1];
+            // Parse Direction Byte
+            // pwm_buffer[1]: |0, 0, 0, 0, a, b, c, d| --> 
+            // Left: |0, 0, 0, 0, 0, 0, a, b|,   Right |0, 0, 0, 0, 0, 0, c, d|
+            uint8_t two_bit_bask = 3;
+            left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
+            right_motor.direction = pwm_buffer[1] & two_bit_bask;
         }
 
         else if (motor_packet_type == SPEED_PACKET) {
-            memcpy(&left_motor.duty_cycle_percent, pwm_buffer[1], sizeof(float));
-            memcpy(&right_motor.duty_cycle_percent, pwm_buffer[5], sizeof(float));
+            uint32_t left =
+            ((uint32_t)pwm_buffer[1] << 24) |
+            ((uint32_t)pwm_buffer[2] << 16) |
+            ((uint32_t)pwm_buffer[3] <<  8) |
+            ((uint32_t)pwm_buffer[4]);
+
+            uint32_t right =
+            ((uint32_t)pwm_buffer[5] << 24) |
+            ((uint32_t)pwm_buffer[6] << 16) |
+            ((uint32_t)pwm_buffer[7] <<  8) |
+            ((uint32_t)pwm_buffer[8]);
+            left_motor.duty_cycle_percent = (float) left;
+            right_motor.duty_cycle_percent = (float) right;
         }
 
         else if (motor_packet_type == FULL_PACKET) {
-            left_motor.direction = pwm_buffer[1];
-            right_motor.direction = pwm_buffer[1];
-            memcpy(&left_motor.duty_cycle_percent, pwm_buffer[2], sizeof(float));
-            memcpy(&right_motor.duty_cycle_percent, pwm_buffer[6], sizeof(float));
+            // Parse Direction Byte
+            // pwm_buffer[1]: |0, 0, 0, 0, a, b, c, d| --> 
+            // Left: |0, 0, 0, 0, 0, 0, a, b|,   Right |0, 0, 0, 0, 0, 0, c, d| 
+            uint8_t two_bit_bask = 3;
+            left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
+            right_motor.direction = pwm_buffer[1] & two_bit_bask;
+            
+            // Parse Speed Data
+            uint32_t left =
+            ((uint32_t)pwm_buffer[2] << 24) |
+            ((uint32_t)pwm_buffer[3] << 16) |
+            ((uint32_t)pwm_buffer[4] <<  8) |
+            ((uint32_t)pwm_buffer[5]);
+
+            uint32_t right =
+            ((uint32_t)pwm_buffer[6] << 24) |
+            ((uint32_t)pwm_buffer[7] << 16) |
+            ((uint32_t)pwm_buffer[8] <<  8) |
+            ((uint32_t)pwm_buffer[9]);
+            left_motor.duty_cycle_percent = (float) left;
+            right_motor.duty_cycle_percent = (float) right;
         }
 
         else if (motor_packet_type == QUAD_PACKET) {
@@ -242,7 +274,7 @@ void startTasks() {
     gpio_put(MOTOR_L_DIR_2_PIN, LOW);
     initMotor(&left_motor, MOTOR_L_PIN, MOTOR_L_DIR_1_PIN, MOTOR_L_DIR_2_PIN);
 
-    // // // Test Motor Output -------------------------------------------
+    // // Test Motor Output -------------------------------------------
     // right_motor.duty_cycle_percent = 50;
     // right_motor.direction_pin_1 = 1;
     // right_motor.direction_pin_2 = 0;
@@ -250,7 +282,7 @@ void startTasks() {
     // left_motor.direction_pin_1 = 1;
     // left_motor.direction_pin_2 = 0;
     // motorSpeedOut(&left_motor, &right_motor);
-    // // // End Test -----------------------------------------
+    // // End Test -----------------------------------------
 
     // // TEST 2!!!!!!!!!!!!!!!!!!!!------------
     // gpio_init(MOTOR_R_PIN);
