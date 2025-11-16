@@ -72,7 +72,7 @@
 
 #define DIST_BUFFER_SIZE 8
 #define VEL_BUFFER_SIZE 16
-#define PWM_BUFFER_SIZE 8
+#define MAX_PWM_BUFFER_SIZE 17
 
 // ???
 #define DT 0.01 // TODO: B.S number for now
