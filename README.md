@@ -75,7 +75,7 @@ TODO: Not 100% Correct
 **Add CMSIS-DSP to build**: cmake .. -DCMSISCORE=cmsis-core-master -DCMSISDSP=CMSIS-DSP-main
 
 
-**Build**: sudo openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2040.cfg -s tcl
+**Debug (Terminal 1)**: sudo openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2040.cfg -s tcl
 
 
 
