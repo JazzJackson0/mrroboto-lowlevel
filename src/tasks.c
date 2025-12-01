@@ -36,7 +36,7 @@ volatile uint8_t motor_packet_type = 0;
 StreamBufferHandle_t uartStream;
 
 // TEMPORARY
-volatile uint8_t error = 0;
+// volatile uint8_t error = 0;
 
 
 /**
