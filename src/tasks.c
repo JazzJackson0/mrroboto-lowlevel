@@ -30,6 +30,14 @@ RobotOdom odometry;
 uint pin_triggered; // Encoder Pin
 volatile uint8_t motor_packet_type = 0;
 
+// NOTE: Using ring buffer and or global data causes some type or race condition error between isr and task
+// volatile uint8_t raw_pwm_buffer[MAX_PWM_BUFFER_SIZE];
+// volatile struct ring_buffer pwm_buffer;
+StreamBufferHandle_t uartStream;
+
+// TEMPORARY
+volatile uint8_t error = 0;
+
 
 /**
  * @brief Task: Updates encoder information
@@ -121,6 +129,7 @@ void vSendIMUVelocitiesTask(void *pvParameters) {
         memcpy(&velocities_buffer[12], (uint32_t) vels->translational.y, sizeof(uint32_t));
 
         i2c_write_raw_blocking(i2c1, velocities_buffer, VEL_BUFFER_SIZE);
+
         // for (size_t i = 0; i < VEL_BUFFER_SIZE; i++) {
         //     while (!(i2c_get_hw(i2c1)->status & I2C_IC_STATUS_TFNF_BITS));  // Wait for FIFO space
         //     i2c_get_hw(i2c1)->data_cmd = velocities_buffer[i];  // Load next byte into FIFO
@@ -136,26 +145,33 @@ void vSendIMUVelocitiesTask(void *pvParameters) {
  */
 void vReceivePWMDataTask(void *pvParameters) {
 
+    uint8_t pwm_buffer[MAX_PWM_BUFFER_SIZE];
+
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        uint8_t pwm_buffer[MAX_PWM_BUFFER_SIZE];
-        // volatile size_t pwm_buff_idx = 0;
+        // ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // while (pwm_buff_idx < MAX_PWM_BUFFER_SIZE) {
-        //     pwm_buffer[pwm_buff_idx++] = uart_getc(UART_ID);
-        // }
+        size_t n = xStreamBufferReceive(uartStream, pwm_buffer, sizeof(pwm_buffer), portMAX_DELAY);
 
-        uart_read_blocking(UART_ID, pwm_buffer, MAX_PWM_BUFFER_SIZE);
+        // uint8_t temp_pwm[MAX_PWM_BUFFER_SIZE];
+        // memcpy(temp_pwm, pwm_buffer, MAX_PWM_BUFFER_SIZE);
+
+        // TODO: Implement ring buffer for "pwm_buffer" to avoid possibility of 
+        // interrupt overwriting pwm_buffer with new data while this task is in 
+        // the middle of processing
         motor_packet_type = pwm_buffer[0];
-        uint32_t max_period = 10000;
+        // motor_packet_type = pwm_buffer[0];
+
 
         if (motor_packet_type == DIRECTION_PACKET) {
             // Parse Direction Byte
             // pwm_buffer[1]: |0, 0, 0, 0, a, b, c, d| --> 
             // Left: |0, 0, 0, 0, 0, 0, a, b|,   Right |0, 0, 0, 0, 0, 0, c, d|
             uint8_t two_bit_bask = 3;
-            left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
-            right_motor.direction = pwm_buffer[1] & two_bit_bask;
+            uint8_t direction = pwm_buffer[1];
+            left_motor.direction = (direction >> 2) & two_bit_bask;
+            right_motor.direction = direction & two_bit_bask;
+            // left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
+            // right_motor.direction = pwm_buffer[1] & two_bit_bask;
         }
 
         else if (motor_packet_type == SPEED_PACKET) {
@@ -179,9 +195,10 @@ void vReceivePWMDataTask(void *pvParameters) {
             // pwm_buffer[1]: |0, 0, 0, 0, a, b, c, d| --> 
             // Left: |0, 0, 0, 0, 0, 0, a, b|,   Right |0, 0, 0, 0, 0, 0, c, d| 
             uint8_t two_bit_bask = 3;
-            left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
-            right_motor.direction = pwm_buffer[1] & two_bit_bask;
-            
+            uint8_t direction = pwm_buffer[1];
+            left_motor.direction = (direction >> 2) & two_bit_bask;
+            right_motor.direction = direction & two_bit_bask;
+
             // Parse Speed Data
             uint32_t left =
             ((uint32_t)pwm_buffer[2] << 24) |
@@ -241,6 +258,9 @@ void vPWMOutTask(void *pvParameters) {
 void startTasks() {
 
     initOdometry(&odometry, TRACKWIDTH);
+
+    // ringBufferInit(&pwm_buffer, raw_pwm_buffer, MAX_PWM_BUFFER_SIZE);
+    uartStream = xStreamBufferCreate(256, 1); // size=256, trigger-level=1 byte
 
     // Setup Right Encoder 
     gpio_init(ENCODER_R_INT_PIN_A);
@@ -313,8 +333,8 @@ void startTasks() {
     gpio_pull_up(I2C_SDA_PIN);
     gpio_pull_up(I2C_SCL_PIN);
     i2c_get_hw(i2c1)->intr_mask = I2C_IC_INTR_MASK_M_RD_REQ_BITS | I2C_IC_INTR_MASK_M_TX_ABRT_BITS | I2C_IC_INTR_MASK_M_TX_OVER_BITS;
-    irq_set_exclusive_handler(I2C1_IRQ, velocities_request_isr);
-    irq_set_enabled(I2C1_IRQ, true);
+    // irq_set_exclusive_handler(I2C1_IRQ, velocities_request_isr);
+    // irq_set_enabled(I2C1_IRQ, true);
 
     // Setup IMU Sensor Connection (I2C0 Bus)
     i2c_init(i2c_default, FAST_MODE);
@@ -331,7 +351,7 @@ void startTasks() {
     // Setup Tasks-----------------------------------
 
     // Updater Tasks
-    // xTaskCreate(vUpdateEncoderTask, "Update Encoder Task", 256, NULL, 5, &encoder_update_task_handle);
+    // xTaskCreate(vUpdateEncoderTask, "Update Encoder Task", 256, NULL, 4, &encoder_update_task_handle);
     xTaskCreate(vUpdateIMUVelocitiesTask, "Update IMU Velocities Task", 256, NULL, 2, &imu_update_task_handle);
 
     // Sender Tasks
@@ -339,8 +359,8 @@ void startTasks() {
     xTaskCreate(vSendIMUVelocitiesTask, "Send IMU Velocities Task", 256, NULL, 3, &imu_vel_send_task_handle);
     
     // PWM Tasks
-    xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 256, NULL, 2, &pwm_read_task_handle);
-    xTaskCreate(vPWMOutTask, "PWM Out Task", 256, NULL, 2, &pwm_out_handle);
+    xTaskCreate(vReceivePWMDataTask, "Receive PWM Data Task", 512, NULL, 4, &pwm_read_task_handle);
+    xTaskCreate(vPWMOutTask, "PWM Out Task", 512, NULL, 4, &pwm_out_handle);
 
     if (xTimer != NULL) {
         xTimerStart(xTimer, 0);
@@ -358,8 +378,11 @@ void startTasks() {
 void encoder_update_isr(uint pin_no, uint32_t event_flags) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     pin_triggered = pin_no;
-    vTaskNotifyGiveFromISR(encoder_update_task_handle, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    if (encoder_update_task_handle != NULL) {
+        vTaskNotifyGiveFromISR(encoder_update_task_handle, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+    
 }
 
 
@@ -376,8 +399,12 @@ void velocities_request_isr() {
     // Master is reading from slave
     if (status & I2C_IC_INTR_STAT_R_RD_REQ_BITS) {
         (void)i2c_get_hw(i2c1)->clr_rd_req; // Clear interrupt
-        vTaskNotifyGiveFromISR(imu_vel_send_task_handle, &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+        if (imu_vel_send_task_handle != NULL) {
+            vTaskNotifyGiveFromISR(imu_vel_send_task_handle, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
+        
     }
 
     if (status & I2C_IC_INTR_STAT_R_TX_ABRT_BITS) {
@@ -396,16 +423,61 @@ void pwm_receive_isr() {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint32_t status = uart_get_hw(uart1)->mis;
 
+    // Receive FIFO Masked interrupt status 
+    // FIFO Can be cleared by either: A -> Clear Register, B -> Read the FIFO
+    // Interrupt stays high as long as data exists in FIFO 
+    // (This ISR will choke out all Tasks. Solution: Must READ the FIFO inside ISR. 
+    // Simply Clearing the Clear register will not work; It will trigger again before the task 
+    // can read to clear the FIFO)
     if (status & UART_UARTMIS_RXMIS_BITS) {
-        uart_get_hw(uart1)->icr |= UART_UARTICR_RXIC_BITS;
-        vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
+        while (uart_is_readable(UART_ID)) {
+
+            uint8_t byt = uart_getc(UART_ID);
+            xStreamBufferSendFromISR(uartStream, &byt, 1, &xHigherPriorityTaskWoken);
+            
+            // ringBufferProduceUint8(&pwm_buffer, (uint8_t) uart_getc(UART_ID));
+            
+            // pwm_buffer[idx++] = (uint8_t) uart_getc(UART_ID);
+            // if (idx >= MAX_PWM_BUFFER_SIZE) { idx = MAX_PWM_BUFFER_SIZE - 1; break; }
+        }
+
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+        // if (pwm_read_task_handle != NULL) {
+        //     vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
+        //     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        // }
     }
 
+    // Receive Time-Out Masked interrupt status
     if (status & UART_UARTMIS_RTMIS_BITS) {
+        // Clear the Time-Out interrupt
         uart_get_hw(uart1)->icr |= UART_UARTICR_RTIC_BITS;
     }
-    
+
+    // Receive Overrun Error Masked interrupt status
+    if (status & UART_UARTMIS_OEMIS_BITS) {
+        // Clear the Overrun Error interrupt
+        uart_get_hw(uart1)->icr |= UART_UARTICR_OEIC_BITS;
+    }
+
+    // Receive Break Error Masked interrupt status
+    if (status & UART_UARTMIS_BEMIS_BITS) {
+        // Clear the Break Error interrupt
+        uart_get_hw(uart1)->icr |= UART_UARTICR_BEIC_BITS;
+    }
+
+    // Receive Framing Error Masked interrupt status
+    if (status & UART_UARTMIS_FEMIS_BITS) {
+        // Clear the Framing Error interrupt
+        uart_get_hw(uart1)->icr |= UART_UARTICR_FEIC_BITS;
+    }
+
+    // Receive Parity Error Masked interrupt status
+    if (status & UART_UARTMIS_PEMIS_BITS) {
+        // Clear the Parity Error interrupt
+        uart_get_hw(uart1)->icr |= UART_UARTICR_PEIC_BITS;
+    }
 }
 
 /**
@@ -418,3 +490,12 @@ void timer_callback(TimerHandle_t xTimer) {
     vTaskNotifyGiveFromISR(imu_update_task_handle, &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
+
+
+/**
+ * TODO:
+ * 
+ *  - Implement a RING BUFFER for pwm_buffer. (See reason in vReceivePWMDataTask() comment)
+ *  - 
+ *  - 
+ */

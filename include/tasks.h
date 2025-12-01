@@ -17,9 +17,11 @@
 #include "encoder.h"
 #include "motor.h"
 #include "imu.h"
-#include <FreeRTOS.h>
-#include <task.h>
-#include <timers.h>
+#include "utils.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "stream_buffer.h"
+#include "timers.h"
 #include "../CMSIS-DSP-main/Include/arm_math.h"
 // #include "math_helper.h"
 
@@ -72,7 +74,7 @@
 
 #define DIST_BUFFER_SIZE 8
 #define VEL_BUFFER_SIZE 16
-#define MAX_PWM_BUFFER_SIZE 17
+#define MAX_PWM_BUFFER_SIZE 64
 
 // ???
 #define DT 0.01 // TODO: B.S number for now
