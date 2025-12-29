@@ -58,3 +58,17 @@ uint8_t ringBufferConsumeUint8(struct ring_buffer * buffer) {
 
     return value;
 }
+
+uint8_t ringBufferGetSizeAvailable(struct ring_buffer * buffer) {
+
+    return (uint8_t) abs((buffer->producer_idx - buffer->consumer_idx));
+}
+
+uint8_t ringBufferDump(struct ring_buffer * buffer, uint8_t * dump) {
+    uint8_t n = ringBufferGetSizeAvailable(buffer);
+    uint8_t i = 0;
+    for (i = 0; i < n; i++) {
+        dump[i] = ringBufferConsumeUint8(buffer);
+    }
+    return i;
+}
