@@ -72,12 +72,14 @@ TODO: Not 100% Correct
 
 ## Building with CMake
 
-**Add CMSIS-DSP to build**: cmake .. -DCMSISCORE=cmsis-core-master -DCMSISDSP=CMSIS-DSP-main
+**Add CMSIS-DSP to build**: `cmake .. -DCMSISCORE=cmsis-core-master -DCMSISDSP=CMSIS-DSP-main`
 
 
-**Debug (Terminal 1)**: sudo openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2040.cfg -s tcl
+**Debug (Terminal 1)**: `sudo openocd -f interface/cmsis-dap.cfg -c "adapter speed 5000" -f target/rp2040.cfg -s tcl`
 
 
+**View OUTPUT STREAM**: view stream coming from the tested pico through the pico probe's UART connection 
 
+`sudo minicom -D /dev/ttyACM0 -b 115200`
 
 
