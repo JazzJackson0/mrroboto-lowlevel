@@ -31,9 +31,12 @@ uint pin_triggered; // Encoder Pin
 volatile uint8_t motor_packet_type = 0;
 
 // NOTE: Using ring buffer and or global data causes some type or race condition error between isr and task
-// volatile uint8_t raw_pwm_buffer[MAX_PWM_BUFFER_SIZE];
-// volatile struct ring_buffer pwm_buffer;
-StreamBufferHandle_t uartStream;
+volatile uint8_t raw_pwm_buffer[MAX_PWM_BUFFER_SIZE];
+SemaphoreHandle_t xMutex;
+volatile struct ring_buffer pwm_buff;
+// MessageBufferHandle_t uartMessageBuffer = NULL;
+// StreamBufferHandle_t uartStreamBuffer = NULL;
+
 
 // TEMPORARY
 // volatile uint8_t error = 0;
@@ -148,19 +151,19 @@ void vReceivePWMDataTask(void *pvParameters) {
     uint8_t pwm_buffer[MAX_PWM_BUFFER_SIZE];
 
     for (;;) {
-        // ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if( xSemaphoreTake( xMutex, ( TickType_t ) 10 ) == pdTRUE ) {
+            // Copy ring buffer to local pwm_buffer
+            volatile uint8_t n = ringBufferDump(&pwm_buff, pwm_buffer);
+            xSemaphoreGive(xMutex);
+        }
 
-        size_t n = xStreamBufferReceive(uartStream, pwm_buffer, sizeof(pwm_buffer), portMAX_DELAY);
+        // while (!xMessageBufferIsEmpty(uartMessageBuffer)) {
 
-        // uint8_t temp_pwm[MAX_PWM_BUFFER_SIZE];
-        // memcpy(temp_pwm, pwm_buffer, MAX_PWM_BUFFER_SIZE);
+        // }
+        // volatile size_t n = xStreamBufferReceive(uartStreamBuffer, pwm_buffer, sizeof(pwm_buffer), portMAX_DELAY);
 
-        // TODO: Implement ring buffer for "pwm_buffer" to avoid possibility of 
-        // interrupt overwriting pwm_buffer with new data while this task is in 
-        // the middle of processing
         motor_packet_type = pwm_buffer[0];
-        // motor_packet_type = pwm_buffer[0];
-
 
         if (motor_packet_type == DIRECTION_PACKET) {
             // Parse Direction Byte
@@ -170,8 +173,6 @@ void vReceivePWMDataTask(void *pvParameters) {
             uint8_t direction = pwm_buffer[1];
             left_motor.direction = (direction >> 2) & two_bit_bask;
             right_motor.direction = direction & two_bit_bask;
-            // left_motor.direction = (pwm_buffer[1] >> 2) & two_bit_bask;
-            // right_motor.direction = pwm_buffer[1] & two_bit_bask;
         }
 
         else if (motor_packet_type == SPEED_PACKET) {
@@ -259,8 +260,10 @@ void startTasks() {
 
     initOdometry(&odometry, TRACKWIDTH);
 
-    // ringBufferInit(&pwm_buffer, raw_pwm_buffer, MAX_PWM_BUFFER_SIZE);
-    uartStream = xStreamBufferCreate(256, 1); // size=256, trigger-level=1 byte
+    xMutex = xSemaphoreCreateMutex();
+    ringBufferInit(&pwm_buff, raw_pwm_buffer, MAX_PWM_BUFFER_SIZE);
+    // uartMessageBuffer = xMessageBufferCreate(256); 
+    // uartStreamBuffer = xStreamBufferCreate(256, 10); 
 
     // Setup Right Encoder 
     gpio_init(ENCODER_R_INT_PIN_A);
@@ -321,7 +324,7 @@ void startTasks() {
     gpio_set_function(UART_RX_GPIO, GPIO_FUNC_UART); // UART1 RX
     uart_set_fifo_enabled(UART_ID, false); // (Clear FIFO Buffer)
     uart_set_fifo_enabled(UART_ID, true);
-    uart_set_irq_enables(UART_ID, true, false); // RX Interrupt
+    uart_set_irq_enables(UART_ID, true, false); // RX Interrupts
     irq_set_exclusive_handler(UART1_IRQ, pwm_receive_isr);
     irq_set_enabled(UART1_IRQ, true);
 
@@ -420,8 +423,12 @@ void velocities_request_isr() {
  */
 void pwm_receive_isr() {
 
+    // TODO: ADD COMMENTS DESCRIBING USE OF TWO RX INTERRUPT FLAGS
+
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint32_t status = uart_get_hw(uart1)->mis;
+    uint8_t bytes[64];
+    int count = 0;
 
     // Receive FIFO Masked interrupt status 
     // FIFO Can be cleared by either: A -> Clear Register, B -> Read the FIFO
@@ -429,55 +436,71 @@ void pwm_receive_isr() {
     // (This ISR will choke out all Tasks. Solution: Must READ the FIFO inside ISR. 
     // Simply Clearing the Clear register will not work; It will trigger again before the task 
     // can read to clear the FIFO)
+    // Triggers every 4 bytes
     if (status & UART_UARTMIS_RXMIS_BITS) {
-        while (uart_is_readable(UART_ID)) {
-
-            uint8_t byt = uart_getc(UART_ID);
-            xStreamBufferSendFromISR(uartStream, &byt, 1, &xHigherPriorityTaskWoken);
-            
-            // ringBufferProduceUint8(&pwm_buffer, (uint8_t) uart_getc(UART_ID));
-            
-            // pwm_buffer[idx++] = (uint8_t) uart_getc(UART_ID);
-            // if (idx >= MAX_PWM_BUFFER_SIZE) { idx = MAX_PWM_BUFFER_SIZE - 1; break; }
+        
+        if( xSemaphoreTake( xMutex, ( TickType_t ) 10 ) == pdTRUE ) {
+            while (uart_is_readable(UART_ID)) {
+                // bytes[count++] = uart_getc(UART_ID);
+                uint8_t c = (uint8_t) uart_getc(UART_ID);
+                ringBufferProduceUint8(&pwm_buff, c);
+            }
+            xSemaphoreGive(xMutex);
         }
 
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
-        // if (pwm_read_task_handle != NULL) {
-        //     vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
+        
+        // xStreamBufferSendFromISR(uartStreamBuffer, bytes, count, &xHigherPriorityTaskWoken);
+        // volatile size_t data_size = xStreamBufferBytesAvailable(uartStreamBuffer);
+        // if (pwm_read_task_handle != NULL && data_size >= 10) {
         //     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         // }
+        volatile uint8_t size_avail = ringBufferGetSizeAvailable(&pwm_buff);
+        if (pwm_read_task_handle != NULL && size_avail == 10) {
+            vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        }
     }
 
     // Receive Time-Out Masked interrupt status
     if (status & UART_UARTMIS_RTMIS_BITS) {
-        // Clear the Time-Out interrupt
-        uart_get_hw(uart1)->icr |= UART_UARTICR_RTIC_BITS;
+        if( xSemaphoreTake( xMutex, ( TickType_t ) 10 ) == pdTRUE ) {
+            while (uart_is_readable(UART_ID)) {
+                uint8_t c = (uint8_t) uart_getc(UART_ID);
+                ringBufferProduceUint8(&pwm_buff, c);
+            }
+            xSemaphoreGive(xMutex);
+        }
+
+        volatile uint8_t size_avail = ringBufferGetSizeAvailable(&pwm_buff);
+        if (pwm_read_task_handle != NULL && size_avail == 10) {
+            vTaskNotifyGiveFromISR(pwm_read_task_handle, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        } 
     }
 
-    // Receive Overrun Error Masked interrupt status
-    if (status & UART_UARTMIS_OEMIS_BITS) {
-        // Clear the Overrun Error interrupt
-        uart_get_hw(uart1)->icr |= UART_UARTICR_OEIC_BITS;
-    }
+    // // Receive Overrun Error Masked interrupt status
+    // if (status & UART_UARTMIS_OEMIS_BITS) {
+    //     // Clear the Overrun Error interrupt
+    //     uart_get_hw(uart1)->icr |= UART_UARTICR_OEIC_BITS;
+    // }
 
-    // Receive Break Error Masked interrupt status
-    if (status & UART_UARTMIS_BEMIS_BITS) {
-        // Clear the Break Error interrupt
-        uart_get_hw(uart1)->icr |= UART_UARTICR_BEIC_BITS;
-    }
+    // // Receive Break Error Masked interrupt status
+    // if (status & UART_UARTMIS_BEMIS_BITS) {
+    //     // Clear the Break Error interrupt
+    //     uart_get_hw(uart1)->icr |= UART_UARTICR_BEIC_BITS;
+    // }
 
-    // Receive Framing Error Masked interrupt status
-    if (status & UART_UARTMIS_FEMIS_BITS) {
-        // Clear the Framing Error interrupt
-        uart_get_hw(uart1)->icr |= UART_UARTICR_FEIC_BITS;
-    }
+    // // Receive Framing Error Masked interrupt status
+    // if (status & UART_UARTMIS_FEMIS_BITS) {
+    //     // Clear the Framing Error interrupt
+    //     uart_get_hw(uart1)->icr |= UART_UARTICR_FEIC_BITS;
+    // }
 
-    // Receive Parity Error Masked interrupt status
-    if (status & UART_UARTMIS_PEMIS_BITS) {
-        // Clear the Parity Error interrupt
-        uart_get_hw(uart1)->icr |= UART_UARTICR_PEIC_BITS;
-    }
+    // // Receive Parity Error Masked interrupt status
+    // if (status & UART_UARTMIS_PEMIS_BITS) {
+    //     // Clear the Parity Error interrupt
+    //     uart_get_hw(uart1)->icr |= UART_UARTICR_PEIC_BITS;
+    // }
 }
 
 /**

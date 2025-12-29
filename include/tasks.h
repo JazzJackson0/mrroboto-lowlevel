@@ -21,6 +21,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stream_buffer.h"
+#include "semphr.h"
 #include "timers.h"
 #include "../CMSIS-DSP-main/Include/arm_math.h"
 // #include "math_helper.h"
@@ -41,7 +42,7 @@
 #define UART_ID uart1
 #define UART_TX_GPIO 8
 #define UART_RX_GPIO 9
-#define UART_BAUD 9600
+#define UART_BAUD 115200
 #define DATA_BITS 8
 #define STOP_BITS 1
 
